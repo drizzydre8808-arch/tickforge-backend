@@ -343,48 +343,90 @@ def run_grid(ticks_iter, p):
     commission= p.get("commission_per_lot",7.0)
     tick_limit= p.get("tick_limit",500000)
 
-    positions=[]; trades=[]; equity=deposit; peak=deposit; max_dd=0.0
-    last_px=None; open_ts=None; n=0; eq_samples=[]
+    trades=[]; equity=deposit; peak=deposit; max_dd=0.0
+    n=0; eq_samples=[]
 
-    def fpnl(bid,ask):
-        t=0.0
-        for s,l,e in positions:
-            px=bid if s=="buy" else ask; sign=1 if s=="buy" else -1
-            t+=sign*(px-e)*l*unit
-        return t
+    if direction == "both":
+        # Two independent martingale grids running in parallel
+        b_pos=[]; s_pos=[]; b_last=None; s_last=None; b_ts=None; s_ts=None
+        for row in ticks_iter:
+            n+=1
+            if n>tick_limit: break
+            bid,ask=float(row[2]),float(row[3])
+            ts=row[1] if len(row)>1 else str(n)
+            # --- buy grid: layers added as price drops ---
+            if not b_pos:
+                e=ask+slippage; b_pos.append(("buy",init_lot,e)); b_last=e; b_ts=ts
+            else:
+                if b_last-ask>=grid_step and len(b_pos)<max_layers:
+                    nl=round(b_pos[-1][1]*lot_mult,2); e=ask+slippage
+                    b_pos.append(("buy",nl,e)); b_last=e
+            b_fp=sum((bid-e)*l*unit for _,l,e in b_pos)
+            if b_pos and b_fp>=tp_usd:
+                tl=sum(x[1] for x in b_pos); comm=tl*commission; realized=b_fp-comm; equity+=realized
+                ae=sum(x[2]*x[1] for x in b_pos)/tl
+                trades.append({"side":"buy","lots":round(tl,2),"entry":round(ae,5),"exit":round(bid,5),"pnl":round(realized,2),"entry_ts":b_ts or "","exit_ts":ts})
+                b_pos.clear(); b_last=None; b_ts=None
+            # --- sell grid: layers added as price rises ---
+            if not s_pos:
+                e=bid-slippage; s_pos.append(("sell",init_lot,e)); s_last=e; s_ts=ts
+            else:
+                if ask-s_last>=grid_step and len(s_pos)<max_layers:
+                    nl=round(s_pos[-1][1]*lot_mult,2); e=bid-slippage
+                    s_pos.append(("sell",nl,e)); s_last=e
+            s_fp=sum((e-ask)*l*unit for _,l,e in s_pos)
+            if s_pos and s_fp>=tp_usd:
+                tl=sum(x[1] for x in s_pos); comm=tl*commission; realized=s_fp-comm; equity+=realized
+                ae=sum(x[2]*x[1] for x in s_pos)/tl
+                trades.append({"side":"sell","lots":round(tl,2),"entry":round(ae,5),"exit":round(ask,5),"pnl":round(realized,2),"entry_ts":s_ts or "","exit_ts":ts})
+                s_pos.clear(); s_last=None; s_ts=None
+            if n%500==0:
+                mtm=equity+b_fp+s_fp; eq_samples.append([ts,mtm])
+                peak=max(peak,mtm); max_dd=max(max_dd,(peak-mtm)/peak*100 if peak>0 else 0)
+        open_layers_end=len(b_pos)+len(s_pos)
+    else:
+        positions=[]; last_px=None; open_ts=None
 
-    for row in ticks_iter:
-        n+=1
-        if n>tick_limit: break
-        bid,ask=float(row[2]),float(row[3])
-        px=ask if direction=="buy" else bid
-        ts=row[1] if len(row)>1 else str(n)
+        def fpnl(bid,ask):
+            t=0.0
+            for s,l,e in positions:
+                px=bid if s=="buy" else ask; sign=1 if s=="buy" else -1
+                t+=sign*(px-e)*l*unit
+            return t
 
-        if not positions:
-            entry=px+(slippage if direction=="buy" else -slippage)
-            positions.append((direction,init_lot,entry))
-            last_px=entry; open_ts=ts
-        else:
-            adv=(last_px-px) if direction=="buy" else (px-last_px)
-            if adv>=grid_step and len(positions)<max_layers:
-                nl=round(positions[-1][1]*lot_mult,2)
+        for row in ticks_iter:
+            n+=1
+            if n>tick_limit: break
+            bid,ask=float(row[2]),float(row[3])
+            px=ask if direction=="buy" else bid
+            ts=row[1] if len(row)>1 else str(n)
+
+            if not positions:
                 entry=px+(slippage if direction=="buy" else -slippage)
-                positions.append((direction,nl,entry)); last_px=entry
+                positions.append((direction,init_lot,entry))
+                last_px=entry; open_ts=ts
+            else:
+                adv=(last_px-px) if direction=="buy" else (px-last_px)
+                if adv>=grid_step and len(positions)<max_layers:
+                    nl=round(positions[-1][1]*lot_mult,2)
+                    entry=px+(slippage if direction=="buy" else -slippage)
+                    positions.append((direction,nl,entry)); last_px=entry
 
-        fp=fpnl(bid,ask)
-        if positions and fp>=tp_usd:
-            total_lots=sum(x[1] for x in positions)
-            comm=total_lots*commission; realized=fp-comm; equity+=realized
-            avg_e=sum(x[2]*x[1] for x in positions)/total_lots
-            exit_px=bid if direction=="buy" else ask
-            trades.append({"side":direction,"lots":round(total_lots,2),
-                "entry":round(avg_e,5),"exit":round(exit_px,5),"pnl":round(realized,2),
-                "entry_ts":open_ts or "","exit_ts":ts})
-            positions.clear(); last_px=None; open_ts=None
+            fp=fpnl(bid,ask)
+            if positions and fp>=tp_usd:
+                total_lots=sum(x[1] for x in positions)
+                comm=total_lots*commission; realized=fp-comm; equity+=realized
+                avg_e=sum(x[2]*x[1] for x in positions)/total_lots
+                exit_px=bid if direction=="buy" else ask
+                trades.append({"side":direction,"lots":round(total_lots,2),
+                    "entry":round(avg_e,5),"exit":round(exit_px,5),"pnl":round(realized,2),
+                    "entry_ts":open_ts or "","exit_ts":ts})
+                positions.clear(); last_px=None; open_ts=None
 
-        if n%500==0:
-            mtm=equity+fpnl(bid,ask); eq_samples.append([ts, mtm])
-            peak=max(peak,mtm); max_dd=max(max_dd,(peak-mtm)/peak*100 if peak>0 else 0)
+            if n%500==0:
+                mtm=equity+fpnl(bid,ask); eq_samples.append([ts, mtm])
+                peak=max(peak,mtm); max_dd=max(max_dd,(peak-mtm)/peak*100 if peak>0 else 0)
+        open_layers_end=len(positions)
 
     wins=[t for t in trades if t["pnl"]>0]; losses=[t for t in trades if t["pnl"]<=0]
     gp=sum(t["pnl"] for t in wins); gl=-sum(t["pnl"] for t in losses)
@@ -403,7 +445,7 @@ def run_grid(ticks_iter, p):
         "win_pct":round(len(wins)/len(trades)*100,1) if trades else 0,
         "profit_factor":pf,"max_drawdown_pct":round(max_dd,2),
         "sharpe":sharpe,"ticks_processed":n,
-        "open_layers_at_end":len(positions),
+        "open_layers_at_end":open_layers_end,
         "equity_curve":eq_samples,
         "trades_list":trades,
     }
