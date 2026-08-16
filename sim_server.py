@@ -7,7 +7,9 @@ Requires: fastapi, uvicorn  (already installed)
 from fastapi import FastAPI, HTTPException, Request, Response, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-import sqlite3, os, json, uuid, hashlib, secrets, csv, io, math, threading
+import sqlite3, os, json, uuid, hashlib, secrets, csv, io, math, threading, smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -17,6 +19,9 @@ HTML_PATH  = DATA_DIR / "index.html"
 TICKS_DIR  = DATA_DIR / "ticks"
 BRIDGE_TOKEN  = os.environ.get("TICKFORGE_BRIDGE_TOKEN", "")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+GMAIL_USER    = os.environ.get("GMAIL_USER", "")
+GMAIL_PASS    = os.environ.get("GMAIL_APP_PASSWORD", "")
+SITE_URL      = os.environ.get("SITE_URL", "http://s6beast.com")
 
 DATA_DIR.mkdir(exist_ok=True)
 TICKS_DIR.mkdir(exist_ok=True)
@@ -64,6 +69,11 @@ def init_db():
             error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS heartbeats (
             runner TEXT PRIMARY KEY, last_seen TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS email_tokens (
+            token TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+            type TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
+        ALTER TABLE users ADD COLUMN verified INTEGER DEFAULT 0;
+        UPDATE users SET verified=1 WHERE verified IS NULL;
         """)
         conn.commit(); conn.close()
 
@@ -96,6 +106,33 @@ def check_bridge(request: Request):
     if request.headers.get("X-Bridge-Token") != BRIDGE_TOKEN:
         raise HTTPException(401, "invalid bridge token")
 
+def send_email(to: str, subject: str, html: str):
+    if not GMAIL_USER or not GMAIL_PASS:
+        print(f"[email] {subject} → {to}  (set GMAIL_USER + GMAIL_APP_PASSWORD to send real emails)")
+        return
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"]    = f"TickForge <{GMAIL_USER}>"
+    msg["To"]      = to
+    msg.attach(MIMEText(html, "html"))
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as s:
+            s.starttls()
+            s.login(GMAIL_USER, GMAIL_PASS)
+            s.sendmail(GMAIL_USER, to, msg.as_string())
+    except Exception as e:
+        print(f"[email] send failed: {e}")
+
+def make_email_token(user_id: str, kind: str, hours: int = 24) -> str:
+    token = secrets.token_urlsafe(32)
+    expires = (datetime.utcnow() + timedelta(hours=hours)).isoformat()
+    with _db_lock:
+        conn = get_db()
+        conn.execute("DELETE FROM email_tokens WHERE user_id=? AND type=?", (user_id, kind))
+        conn.execute("INSERT INTO email_tokens VALUES (?,?,?,?,?)", (token, user_id, kind, expires, now()))
+        conn.commit(); conn.close()
+    return token
+
 # ── HTML ──────────────────────────────────────────────────────────────────────
 @app.get("/")
 async def index():
@@ -118,15 +155,23 @@ async def signup(request: Request, response: Response):
     with _db_lock:
         conn = get_db()
         try:
-            conn.execute("INSERT INTO users VALUES (?,?,?,?)", (uid, email, hash_pw(pw), now()))
+            conn.execute("INSERT INTO users (id,email,pw_hash,created_at,verified) VALUES (?,?,?,?,0)",
+                         (uid, email, hash_pw(pw), now()))
             conn.commit()
         except sqlite3.IntegrityError:
             conn.close(); raise HTTPException(400, "email already registered")
-        token = make_token()
-        conn.execute("INSERT INTO sessions VALUES (?,?,?)", (token, uid, now()))
-        conn.commit(); conn.close()
-    response.set_cookie("tf_session", token, httponly=True, samesite="lax")
-    return {"email": email, "token": token}
+        conn.close()
+    token = make_email_token(uid, "verify", hours=48)
+    link  = f"{SITE_URL}/auth/verify/{token}"
+    send_email(email, "Verify your TickForge account", f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:32px;background:#1e222d;color:#d1d4dc;border-radius:8px;">
+      <h2 style="color:#f0b90b;margin:0 0 16px">Welcome to TickForge</h2>
+      <p style="margin:0 0 24px;color:#787b86;">Click the button below to verify your email and activate your account.</p>
+      <a href="{link}" style="display:inline-block;padding:12px 28px;background:#f0b90b;color:#131722;font-weight:700;border-radius:4px;text-decoration:none;">Verify my email</a>
+      <p style="margin:24px 0 0;font-size:12px;color:#4a4e5b;">Link expires in 48 hours. If you didn't sign up, ignore this.</p>
+    </div>""")
+    return {"email": email, "pending_verification": True,
+            "message": "Check your email to verify your account before signing in."}
 
 @app.post("/auth/login")
 async def login(request: Request, response: Response):
@@ -139,6 +184,8 @@ async def login(request: Request, response: Response):
         conn.close()
     if not row or row["pw_hash"] != hash_pw(pw):
         raise HTTPException(401, "invalid email or password")
+    if not row["verified"]:
+        raise HTTPException(403, "please verify your email first — check your inbox")
     token = make_token()
     with _db_lock:
         conn = get_db()
@@ -166,6 +213,107 @@ async def me(request: Request):
         conn.close()
     if not row: raise HTTPException(404, "user not found")
     return {"email": row["email"]}
+
+@app.get("/auth/verify/{token}")
+async def verify_email(token: str):
+    with _db_lock:
+        conn = get_db()
+        row = conn.execute("SELECT * FROM email_tokens WHERE token=? AND type='verify'", (token,)).fetchone()
+        if not row or row["expires_at"] < now():
+            conn.close()
+            return HTMLResponse(_page("Link expired", "<p>This verification link has expired. <a href='/'>Sign up again</a>.</p>"))
+        conn.execute("UPDATE users SET verified=1 WHERE id=?", (row["user_id"],))
+        conn.execute("DELETE FROM email_tokens WHERE token=?", (token,))
+        conn.commit(); conn.close()
+    return HTMLResponse(_page("Email verified", """
+        <p style="color:#26a69a;font-size:18px;margin-bottom:16px">✓ Your email has been verified!</p>
+        <p>You can now <a href="/" style="color:#f0b90b">sign in to TickForge</a>.</p>"""))
+
+@app.post("/auth/forgot-password")
+async def forgot_password(request: Request):
+    body = await request.json()
+    email = body.get("email","").strip().lower()
+    with _db_lock:
+        conn = get_db()
+        row = conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+        conn.close()
+    if row:
+        token = make_email_token(row["id"], "reset", hours=2)
+        link  = f"{SITE_URL}/auth/reset/{token}"
+        send_email(email, "Reset your TickForge password", f"""
+        <div style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:32px;background:#1e222d;color:#d1d4dc;border-radius:8px;">
+          <h2 style="color:#f0b90b;margin:0 0 16px">Password reset</h2>
+          <p style="margin:0 0 24px;color:#787b86;">Click the button below to choose a new password. Link expires in 2 hours.</p>
+          <a href="{link}" style="display:inline-block;padding:12px 28px;background:#f0b90b;color:#131722;font-weight:700;border-radius:4px;text-decoration:none;">Reset password</a>
+        </div>""")
+    return {"message": "If that email is registered you'll receive a reset link shortly."}
+
+@app.get("/auth/reset/{token}")
+async def reset_form(token: str):
+    with _db_lock:
+        conn = get_db()
+        row = conn.execute("SELECT * FROM email_tokens WHERE token=? AND type='reset'", (token,)).fetchone()
+        conn.close()
+    if not row or row["expires_at"] < now():
+        return HTMLResponse(_page("Link expired", "<p>This reset link has expired. <a href='/'>Try again</a>.</p>"))
+    return HTMLResponse(_page("Reset password", f"""
+        <form method="POST" style="display:flex;flex-direction:column;gap:12px;max-width:320px;margin:0 auto;">
+          <input type="hidden" name="token" value="{token}">
+          <input name="password" type="password" placeholder="New password" required
+            style="padding:10px 14px;background:#2a2e39;border:1px solid #363c4e;color:#d1d4dc;border-radius:4px;font-size:14px;">
+          <input name="confirm" type="password" placeholder="Confirm password" required
+            style="padding:10px 14px;background:#2a2e39;border:1px solid #363c4e;color:#d1d4dc;border-radius:4px;font-size:14px;">
+          <button type="submit"
+            style="padding:11px;background:#f0b90b;color:#131722;font-weight:700;border:none;border-radius:4px;cursor:pointer;font-size:14px;">
+            Set new password
+          </button>
+        </form>"""))
+
+@app.post("/auth/reset/{token}")
+async def reset_password(token: str, request: Request):
+    form = await request.form()
+    pw = form.get("password",""); confirm = form.get("confirm","")
+    if pw != confirm:
+        return HTMLResponse(_page("Error", "<p style='color:#ef5350'>Passwords don't match. <a href='javascript:history.back()'>Go back</a>.</p>"))
+    if len(pw) < 6:
+        return HTMLResponse(_page("Error", "<p style='color:#ef5350'>Password must be at least 6 characters. <a href='javascript:history.back()'>Go back</a>.</p>"))
+    with _db_lock:
+        conn = get_db()
+        row = conn.execute("SELECT * FROM email_tokens WHERE token=? AND type='reset'", (token,)).fetchone()
+        if not row or row["expires_at"] < now():
+            conn.close()
+            return HTMLResponse(_page("Link expired", "<p>This reset link has expired. <a href='/'>Try again</a>.</p>"))
+        conn.execute("UPDATE users SET pw_hash=? WHERE id=?", (hash_pw(pw), row["user_id"]))
+        conn.execute("DELETE FROM email_tokens WHERE token=?", (token,))
+        conn.commit(); conn.close()
+    return HTMLResponse(_page("Password updated", """
+        <p style="color:#26a69a;font-size:18px;margin-bottom:16px">✓ Password updated!</p>
+        <p><a href="/" style="color:#f0b90b">Sign in to TickForge</a></p>"""))
+
+@app.post("/auth/resend-verification")
+async def resend_verification(request: Request):
+    body = await request.json()
+    email = body.get("email","").strip().lower()
+    with _db_lock:
+        conn = get_db()
+        row = conn.execute("SELECT * FROM users WHERE email=? AND verified=0", (email,)).fetchone()
+        conn.close()
+    if row:
+        token = make_email_token(row["id"], "verify", hours=48)
+        link  = f"{SITE_URL}/auth/verify/{token}"
+        send_email(email, "Verify your TickForge account", f"""
+        <div style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:32px;background:#1e222d;color:#d1d4dc;border-radius:8px;">
+          <h2 style="color:#f0b90b;margin:0 0 16px">Verify your email</h2>
+          <a href="{link}" style="display:inline-block;padding:12px 28px;background:#f0b90b;color:#131722;font-weight:700;border-radius:4px;text-decoration:none;">Verify my email</a>
+        </div>""")
+    return {"message": "If your email is pending verification, a new link has been sent."}
+
+def _page(title: str, body: str) -> str:
+    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>{title} — TickForge</title>
+    <style>*{{box-sizing:border-box;margin:0;padding:0}}body{{background:#131722;color:#d1d4dc;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}}
+    .card{{background:#1e222d;border:1px solid #363c4e;border-radius:8px;padding:40px;max-width:480px;width:100%;text-align:center}}
+    h1{{color:#f0b90b;font-size:22px;margin-bottom:24px}}a{{color:#f0b90b}}p{{line-height:1.6;color:#787b86}}</style></head>
+    <body><div class="card"><h1>TickForge</h1>{body}</div></body></html>"""
 
 # ── Grid Strategy ─────────────────────────────────────────────────────────────
 LOT_UNITS = {"XAUUSD":100,"EURUSD":100000,"GBPUSD":100000,"USDJPY":100000,"BTCUSD":1}
