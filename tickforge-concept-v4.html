@@ -575,14 +575,6 @@
         <div class="vicon" id="verdict-icon">✓</div>
         <div id="verdict-text"></div>
       </div>
-
-      <div class="hidden" id="native-trades-panel" style="margin-top:16px;">
-        <div class="panel-head-left" style="margin-bottom:8px;"><div class="panel-title">Deals — MT5 Strategy Tester</div></div>
-        <table>
-          <thead><tr><th>Time</th><th>Symbol</th><th>Type</th><th>Volume</th><th>Price</th><th>Profit</th><th>Balance</th></tr></thead>
-          <tbody id="native-trades-tbody"></tbody>
-        </table>
-      </div>
     </div>
 
     <!-- AI ANALYSIS -->
@@ -1298,19 +1290,29 @@
   }
 
   let _tvChart = null, _tvSeries = null;
+  let _nativeTvChart = null, _nativeTvSeries = null;
+  let _tvRO = null, _nativeTvRO = null;
 
   function renderTVChart(equity, trades, title, containerId) {
     containerId = containerId || 'tv-chart';
-    const wrap = containerId === 'native-tv-chart' ? $('native-equity-wrap') : $('equity-wrap');
+    const isNative = containerId === 'native-tv-chart';
+    const wrap = isNative ? $('native-equity-wrap') : $('equity-wrap');
     const container = $(containerId);
+    if(!container) return;
     if(wrap) wrap.classList.remove('hidden');
-    if($('equity-title') && containerId !== 'native-tv-chart') $('equity-title').textContent = title;
-    if($('equity-range')) $('equity-range').textContent = '';
+    if(!isNative && $('equity-title')) $('equity-title').textContent = title;
+    if(!isNative && $('equity-range')) $('equity-range').textContent = '';
 
-    // Destroy previous chart instance
-    if (_tvChart) { _tvChart.remove(); _tvChart = null; }
+    // Destroy previous chart instance for this slot only
+    if(isNative) {
+      if(_nativeTvRO){ _nativeTvRO.disconnect(); _nativeTvRO = null; }
+      if(_nativeTvChart){ _nativeTvChart.remove(); _nativeTvChart = null; }
+    } else {
+      if(_tvRO){ _tvRO.disconnect(); _tvRO = null; }
+      if(_tvChart){ _tvChart.remove(); _tvChart = null; }
+    }
 
-    _tvChart = LightweightCharts.createChart(container, {
+    const chart = LightweightCharts.createChart(container, {
       width: container.clientWidth,
       height: 280,
       layout: { background: { color: '#1e222d' }, textColor: '#787b86' },
@@ -1322,7 +1324,7 @@
       handleScale: true,
     });
 
-    _tvSeries = _tvChart.addAreaSeries({
+    const series = chart.addAreaSeries({
       lineColor: '#2bc98f',
       topColor: 'rgba(43,201,143,0.25)',
       bottomColor: 'rgba(43,201,143,0.02)',
@@ -1330,61 +1332,60 @@
       priceLineVisible: false,
     });
 
-    // Build time-series data
+    // Store chart refs in the right slot
+    if(isNative){ _nativeTvChart = chart; _nativeTvSeries = series; }
+    else         { _tvChart = chart;       _tvSeries = series; }
+
+    // Build time-series — equity entries are [timestamp_string|index, value]
     const now_ms = Date.now();
-    const step_ms = 60000; // 1 min spacing if no real timestamps
-    const lineData = equity.map(([idx, val], i) => {
-      // equity entries may be [timestamp_string, val] or [index, val]
+    const step_ms = 60000;
+    const lineData = equity.map((entry, i) => {
+      const [idx, val] = Array.isArray(entry) ? entry : [i, entry];
       let t_sec;
-      if (typeof idx === 'string' && idx.includes('T')) {
+      if(typeof idx === 'string' && idx.includes('T'))
         t_sec = Math.floor(new Date(idx).getTime() / 1000);
-      } else {
+      else
         t_sec = Math.floor((now_ms - (equity.length - i) * step_ms) / 1000);
-      }
-      return { time: t_sec, value: Number(val.toFixed(2)) };
+      return { time: t_sec, value: Number((+val).toFixed(2)) };
     }).filter(d => isFinite(d.time) && isFinite(d.value))
-      .sort((a, b) => a.time - b.time);
+      .sort((a,b) => a.time - b.time);
 
     // Deduplicate timestamps
     const seen = new Set();
     const unique = lineData.filter(d => { if(seen.has(d.time)) return false; seen.add(d.time); return true; });
 
-    if (unique.length > 1) {
-      _tvSeries.setData(unique);
+    if(unique.length > 1){
+      series.setData(unique);
       const vals = unique.map(d => d.value);
       const mn = Math.min(...vals), mx = Math.max(...vals);
-      $('equity-range').textContent = `$${mn.toLocaleString(undefined,{maximumFractionDigits:0})} – $${mx.toLocaleString(undefined,{maximumFractionDigits:0})}`;
+      if(!isNative && $('equity-range'))
+        $('equity-range').textContent = `$${mn.toLocaleString(undefined,{maximumFractionDigits:0})} – $${mx.toLocaleString(undefined,{maximumFractionDigits:0})}`;
     }
 
     // Trade markers
-    if (trades && trades.length) {
-      const markers = [];
-      for (const tr of trades) {
+    if(trades && trades.length){
+      const markers = trades.map(tr => {
         const ts = tr.exit_ts || tr.entry_ts;
-        if (!ts) continue;
+        if(!ts) return null;
         const t_sec = Math.floor(new Date(ts).getTime() / 1000);
-        if (!isFinite(t_sec)) continue;
+        if(!isFinite(t_sec)) return null;
         const profit = tr.pnl ?? tr.profit ?? 0;
-        markers.push({
-          time: t_sec,
+        return { time: t_sec,
           position: profit >= 0 ? 'aboveBar' : 'belowBar',
           color: profit >= 0 ? '#26a69a' : '#ef5350',
           shape: profit >= 0 ? 'arrowUp' : 'arrowDown',
           text: `${profit >= 0 ? '+' : ''}$${Math.abs(profit).toFixed(0)}`,
-          size: 1,
-        });
-      }
-      if (markers.length) {
-        markers.sort((a,b) => a.time - b.time);
-        _tvSeries.setMarkers(markers);
-      }
+          size: 1 };
+      }).filter(Boolean).sort((a,b) => a.time - b.time);
+      if(markers.length) series.setMarkers(markers);
     }
 
-    _tvChart.timeScale().fitContent();
+    chart.timeScale().fitContent();
 
-    // Responsive resize
-    const ro = new ResizeObserver(() => { if(_tvChart) _tvChart.applyOptions({ width: container.clientWidth }); });
+    // Responsive resize — disconnect previous observer first
+    const ro = new ResizeObserver(() => chart.applyOptions({ width: container.clientWidth }));
     ro.observe(container);
+    if(isNative) _nativeTvRO = ro; else _tvRO = ro;
   }
 
   function renderResult(t){
@@ -1777,10 +1778,10 @@
   async function loadJournal(){
     try{
       const [stats, daily, trades, tests] = await Promise.all([
-        fetch(`${API}/journal/stats`).then(r=>r.json()),
-        fetch(`${API}/journal/calendar`).then(r=>r.json()),
-        fetch(`${API}/journal/trades`).then(r=>r.json()),
-        fetch(`${API}/tests`).then(r=>r.status === 401 ? [] : r.json()),
+        authFetch(`${API}/journal/stats`).then(r=>r.json()),
+        authFetch(`${API}/journal/calendar`).then(r=>r.json()),
+        authFetch(`${API}/journal/trades`).then(r=>r.json()),
+        authFetch(`${API}/tests`).then(r=>r.status === 401 ? [] : r.json()),
       ]);
       if(stats.detail){ showAuth(); return; }
       const cls = v => v >= 0 ? 'pos' : 'neg';
@@ -1855,7 +1856,7 @@
       const res = await authFetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
       const j = await res.json();
       if(!res.ok) throw new Error(j.detail || res.statusText);
-      $('j-import-status').textContent = `imported ${j.imported} trades from ${j.source}`;
+      $('j-import-status').textContent = `imported ${j.imported} trades`;
       loadJournal();
     }catch(e){
       $('j-import-status').textContent = 'import failed: ' + e.message;
@@ -2480,8 +2481,7 @@
     const t = RS.openTrades.splice(idx,1)[0];
     const exitPrice = t.side==='buy' ? bar[3] : bar[2];
     const pip = pipSize();
-    const pipValue = t.lots * (t.side==='buy'?1:-1) * (exitPrice-t.entry) / pip;
-    const pnl = pipValue * pip * t.lots * (t.entry>100?100:10000);
+    const pnl = (t.side==='buy'?1:-1) * (exitPrice - t.entry) * t.lots * (t.entry>100?100:10000);
     RS.closedTrades.push({...t, exit: exitPrice, exitBarIdx: RS.cursor, pnl});
     RS.account += pnl;
     RS.peakEquity = Math.max(RS.peakEquity, RS.account);

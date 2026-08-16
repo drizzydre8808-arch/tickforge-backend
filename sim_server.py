@@ -333,7 +333,7 @@ def run_grid(ticks_iter, p):
     unit      = LOT_UNITS.get(symbol, 100000)
     pip       = PIP_SIZE.get(symbol, 0.0001)
     grid_step = p.get("grid_step_pips",25) * pip
-    slippage  = p.get("slippage_pips",0) * pip
+    slippage  = p.get("slippage_price", p.get("slippage_pips",0) * pip)
     deposit   = p.get("deposit",10000)
     direction = p.get("direction","buy")
     init_lot  = p.get("initial_lot",0.01)
@@ -392,7 +392,7 @@ def run_grid(ticks_iter, p):
     net=round(equity-deposit,2)
     sharpe=None
     if len(eq_samples)>2:
-        d=[eq_samples[i+1]-eq_samples[i] for i in range(len(eq_samples)-1)]
+        d=[eq_samples[i+1][1]-eq_samples[i][1] for i in range(len(eq_samples)-1)]
         mn=sum(d)/len(d); std=math.sqrt(sum((x-mn)**2 for x in d)/len(d))
         if std>0: sharpe=round(mn/std*math.sqrt(len(d)),2)
     return {
@@ -415,7 +415,7 @@ def iter_ticks(symbol,dt_from,dt_to,limit=500000):
         r=csv.reader(fh); next(r,None)
         n=0
         for row in r:
-            if len(row)<3: continue
+            if len(row)<4: continue
             ts=row[1] if len(row)>1 else ""
             if dt_from and ts and ts[:10]<dt_from: continue
             if dt_to and ts and ts[:10]>dt_to: break
@@ -603,7 +603,7 @@ def _duka_hour(symbol, year, month, day, hour):
     if not raw_data:
         return []
     try:
-        raw = lzma.decompress(raw_data)
+        raw = lzma.decompress(raw_data, format=lzma.FORMAT_ALONE)
     except Exception:
         return []
     factor = _DUKA_DECIMAL.get(symbol, 100000)
