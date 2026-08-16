@@ -969,10 +969,11 @@
     <div class="panel">
       <div class="panel-head">
         <div class="panel-head-left"><div class="panel-title">Data hub</div></div>
-        <div style="display:flex; gap:6px;">
-          <button class="btn btn-secondary active" id="src-duka-btn" onclick="setDataSource('dukascopy')" style="font-size:11.5px; padding:4px 12px;">Dukascopy</button>
-          <button class="btn btn-ghost" id="src-alltick-btn" onclick="setDataSource('alltick')" style="font-size:11.5px; padding:4px 12px;">AllTick</button>
-          <button class="btn btn-ghost" id="src-synth-btn" onclick="setDataSource('synthetic')" style="font-size:11.5px; padding:4px 12px;">Synthetic</button>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn btn-secondary active" id="src-duka-btn"    onclick="setDataSource('dukascopy')"  style="font-size:11.5px; padding:4px 12px;">Dukascopy</button>
+          <button class="btn btn-ghost"            id="src-td-btn"      onclick="setDataSource('twelvedata')" style="font-size:11.5px; padding:4px 12px;">Twelve Data</button>
+          <button class="btn btn-ghost"            id="src-alltick-btn" onclick="setDataSource('alltick')"    style="font-size:11.5px; padding:4px 12px;">AllTick</button>
+          <button class="btn btn-ghost"            id="src-synth-btn"   onclick="setDataSource('synthetic')"  style="font-size:11.5px; padding:4px 12px;">Synthetic</button>
         </div>
       </div>
 
@@ -987,6 +988,37 @@
         <div class="btn-row" style="margin-bottom:8px;">
           <button class="btn btn-primary" id="t-download-btn" onclick="pullTicks('download')">⇩ Download real ticks</button>
         </div>
+      </div>
+
+      <!-- TWELVE DATA -->
+      <div id="ds-twelvedata" style="display:none;">
+        <div class="toolbar-left" style="margin-bottom:14px; color:var(--muted); font-size:12px;">
+          Twelve Data provides 1-minute OHLC bars for 5000+ instruments including XAUUSD, all major forex pairs, and crypto — up to the current date. Free tier: 800 API calls/day.
+          <a href="https://twelvedata.com/register" target="_blank" style="color:var(--accent);">Get a free API key at twelvedata.com</a>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="margin-top:0;">Twelve Data API key</label>
+          <input type="text" id="td-key" placeholder="paste your Twelve Data API key" style="font-family:var(--mono); font-size:11px;">
+        </div>
+        <div class="row-3" style="margin-bottom:12px;">
+          <div><label style="margin-top:0;">Symbol</label><input type="text" id="td-symbol" value="XAUUSD"></div>
+          <div><label style="margin-top:0;">From</label><input type="date" id="td-from" value="2026-01-01"></div>
+          <div><label style="margin-top:0;">To</label><input type="date" id="td-to" value="2026-08-15"></div>
+        </div>
+        <div class="row-2" style="margin-bottom:12px;">
+          <div><label style="margin-top:0;">Interval</label>
+            <select id="td-interval">
+              <option value="1min" selected>1 min (highest resolution)</option>
+              <option value="5min">5 min</option>
+              <option value="15min">15 min</option>
+              <option value="1h">1 hour (fastest, long ranges)</option>
+            </select>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-bottom:8px;">
+          <button class="btn btn-primary" id="td-download-btn" onclick="pullTicksTwelveData()">⇩ Download via Twelve Data</button>
+        </div>
+        <div class="run-note" style="text-align:left; color:var(--muted-2); margin-bottom:6px;">Free tier rate limit: 8 req/min — a 1-year range at 1-min takes ~15 min. Use 1-hour interval for fast bulk downloads.</div>
       </div>
 
       <!-- ALLTICK -->
@@ -1079,12 +1111,13 @@
   });
 
   function setDataSource(src){
-    ['dukascopy','alltick','synthetic'].forEach(s=>{
+    ['dukascopy','twelvedata','alltick','synthetic'].forEach(s=>{
       document.getElementById('ds-'+s).style.display = s===src ? '' : 'none';
     });
-    $('src-duka-btn').className   = 'btn ' + (src==='dukascopy' ? 'btn-secondary active' : 'btn-ghost');
-    $('src-alltick-btn').className = 'btn ' + (src==='alltick'  ? 'btn-secondary active' : 'btn-ghost');
-    $('src-synth-btn').className  = 'btn ' + (src==='synthetic'? 'btn-secondary active' : 'btn-ghost');
+    $('src-duka-btn').className    = 'btn ' + (src==='dukascopy'  ? 'btn-secondary active' : 'btn-ghost');
+    $('src-td-btn').className      = 'btn ' + (src==='twelvedata' ? 'btn-secondary active' : 'btn-ghost');
+    $('src-alltick-btn').className = 'btn ' + (src==='alltick'    ? 'btn-secondary active' : 'btn-ghost');
+    $('src-synth-btn').className   = 'btn ' + (src==='synthetic'  ? 'btn-secondary active' : 'btn-ghost');
   }
 
   document.querySelectorAll('.chip-row .chip').forEach(c=>{
@@ -1415,6 +1448,40 @@
       }
       if(j.status === 'failed') throw new Error(j.error || 'download failed');
       status.textContent = `done — ${j.ticks.toLocaleString()} ticks stored for ${symbol} (AllTick)`;
+      loadCoverage();
+    }catch(e){
+      status.textContent = `error: ${e.message}`;
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  async function pullTicksTwelveData(){
+    const api_key = $('td-key').value.trim();
+    if(!api_key){ $('t-status').textContent = 'enter your Twelve Data API key first'; return; }
+    const symbol   = $('td-symbol').value.trim().toUpperCase();
+    const dt_from  = $('td-from').value;
+    const dt_to    = $('td-to').value;
+    const interval = $('td-interval').value;
+    const status   = $('t-status');
+    const btn      = $('td-download-btn');
+    btn.disabled   = true;
+    status.textContent = `starting Twelve Data download for ${symbol} (${interval})…`;
+    try{
+      const res = await authFetch(`${API}/ticks/twelvedata`, {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({symbol, dt_from, dt_to, api_key, interval})
+      });
+      if(res.status === 401){ showAuth(); throw new Error('signed out'); }
+      let j = await res.json();
+      if(!res.ok) throw new Error(j.detail || res.statusText);
+      while(j.status === 'queued' || j.status === 'running'){
+        await sleep(5000);
+        j = await (await authFetch(`${API}/ticks/download/${j.id}`)).json();
+        status.textContent = `Twelve Data ${symbol}: ${j.ticks.toLocaleString()} ticks downloaded…`;
+      }
+      if(j.status === 'failed') throw new Error(j.error || 'download failed');
+      status.textContent = `done — ${j.ticks.toLocaleString()} ticks stored for ${symbol} (Twelve Data)`;
       loadCoverage();
     }catch(e){
       status.textContent = `error: ${e.message}`;

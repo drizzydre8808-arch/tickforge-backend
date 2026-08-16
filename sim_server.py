@@ -573,36 +573,145 @@ async def generate_ticks(request: Request):
             w.writerow([symbol,ts.isoformat(),f"{price:.5f}",f"{price+spread:.5f}"]); ts+=timedelta(seconds=60)
     return {"ticks_generated":n,"source":"synthetic","symbol":symbol}
 
-def _run_dukascopy(jid: str, symbol: str, dt_from: str, dt_to: str):
-    import subprocess, time
-    script  = DATA_DIR / "download_ticks.js"
-    out_csv = TICKS_DIR / f"{symbol.upper()}.csv"
-    if not script.exists():
-        with _db_lock:
-            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='failed',error=?,updated_at=? WHERE id=?",("download_ticks.js not found at C:\\tickforge-data\\",now(),jid)); conn.commit(); conn.close()
-        return
+# ── Dukascopy pure-Python downloader (no Node.js required) ───────────────────
+# Fetches .bi5 (LZMA-compressed binary) tick files directly from Dukascopy.
+# URL month is 0-indexed. Each record: 4B ts_ms_offset, 4B ask_int, 4B bid_int,
+# 4B ask_vol (f32), 4B bid_vol (f32) — big-endian, 20 bytes total.
+_DUKA_DECIMAL = {
+    'XAUUSD':1000,'XAGUSD':1000,'XPTUSD':1000,
+    'EURUSD':100000,'GBPUSD':100000,'USDCHF':100000,'AUDUSD':100000,
+    'USDCAD':100000,'NZDUSD':100000,'EURGBP':100000,'EURCHF':100000,
+    'EURAUD':100000,'EURCAD':100000,'GBPCAD':100000,'GBPCHF':100000,
+    'EURJPY':1000,'USDJPY':1000,'GBPJPY':1000,'CADJPY':1000,'AUDJPY':1000,
+    'BTCUSD':100,'ETHUSD':100,'LTCUSD':100,
+}
+_DUKA_HDRS = {'User-Agent':'Mozilla/5.0 (compatible; TickForge)','Accept-Encoding':'identity'}
+
+def _duka_hour(symbol, year, month, day, hour):
+    import lzma, struct, urllib.request as _ur
+    url = (f"https://datafeed.dukascopy.com/datafeed/{symbol}"
+           f"/{year}/{month-1:02d}/{day:02d}/{hour:02d}h_ticks.bi5")
     try:
-        proc = subprocess.Popen(
-            ["node", str(script), symbol, dt_from, dt_to, str(out_csv)],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-        )
-        while proc.poll() is None:
-            time.sleep(4)
-            if out_csv.exists():
-                try:
-                    count = max(0, sum(1 for _ in open(str(out_csv))) - 1)
-                    with _db_lock:
-                        conn=get_db(); conn.execute("UPDATE tick_jobs SET ticks=?,updated_at=? WHERE id=?",(count,now(),jid)); conn.commit(); conn.close()
-                except: pass
-        stdout, _ = proc.communicate()
-        if proc.returncode != 0:
-            raise Exception((stdout or "").strip() or "node exited with error")
-        count = max(0, sum(1 for _ in open(str(out_csv))) - 1) if out_csv.exists() else 0
+        req = _ur.Request(url, headers=_DUKA_HDRS)
+        with _ur.urlopen(req, timeout=20) as r:
+            raw_data = r.read()
+    except Exception:
+        return []
+    if not raw_data:
+        return []
+    try:
+        raw = lzma.decompress(raw_data)
+    except Exception:
+        return []
+    factor = _DUKA_DECIMAL.get(symbol, 100000)
+    import datetime as _DT
+    h_start = int(_DT.datetime(year, month, day, hour, tzinfo=_DT.timezone.utc).timestamp() * 1000)
+    result = []
+    for i in range(len(raw) // 20):
+        ts_off, ask_i, bid_i, _, _ = struct.unpack('>IIIff', raw[i*20:(i+1)*20])
+        if bid_i == 0 or ask_i == 0:
+            continue
+        ts = _DT.datetime.utcfromtimestamp((h_start + ts_off) / 1000).isoformat()
+        result.append((ts, round(bid_i / factor, 5), round(ask_i / factor, 5)))
+    return result
+
+def _run_dukascopy(jid: str, symbol: str, dt_from: str, dt_to: str):
+    import datetime as _DT, time as _time
+    sym = symbol.upper()
+    start = _DT.datetime.fromisoformat(dt_from).replace(tzinfo=None)
+    end   = _DT.datetime.fromisoformat(dt_to).replace(tzinfo=None)
+    day   = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    all_ticks = []
+    try:
+        while day <= end:
+            for hour in range(24):
+                for ts, bid, ask in _duka_hour(sym, day.year, day.month, day.day, hour):
+                    all_ticks.append((sym, ts, bid, ask))
+            with _db_lock:
+                conn=get_db(); conn.execute("UPDATE tick_jobs SET ticks=?,updated_at=? WHERE id=?",
+                    (len(all_ticks),now(),jid)); conn.commit(); conn.close()
+            day += _DT.timedelta(days=1)
+            _time.sleep(0.15)
         with _db_lock:
-            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='complete',ticks=?,updated_at=? WHERE id=?",(count,now(),jid)); conn.commit(); conn.close()
+            conn=get_db()
+            conn.execute("DELETE FROM ticks WHERE symbol=?",(sym,))
+            if all_ticks:
+                conn.executemany("INSERT INTO ticks VALUES (?,?,?,?)", all_ticks)
+            conn.execute("UPDATE tick_jobs SET status='complete',ticks=?,updated_at=? WHERE id=?",
+                         (len(all_ticks),now(),jid)); conn.commit(); conn.close()
     except Exception as e:
         with _db_lock:
-            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='failed',error=?,updated_at=? WHERE id=?",(str(e),now(),jid)); conn.commit(); conn.close()
+            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='failed',error=?,updated_at=? WHERE id=?",
+                (str(e),now(),jid)); conn.commit(); conn.close()
+
+# ── Twelve Data 1-min OHLC → ticks ───────────────────────────────────────────
+_TD_SPREAD = {'XAUUSD':0.30,'XAGUSD':0.03,'EURUSD':0.0001,'GBPUSD':0.00015,
+              'USDJPY':0.02,'BTCUSD':10,'ETHUSD':1,'DEFAULT':0.0002}
+
+def _run_twelvedata(jid, symbol, dt_from, dt_to, api_key, interval='1min'):
+    import urllib.request as _ur, json as _json, datetime as _DT, urllib.parse as _up, time as _time
+    td_sym = symbol[:3] + '/' + symbol[3:] if len(symbol) == 6 else symbol
+    spread = _TD_SPREAD.get(symbol, _TD_SPREAD['DEFAULT'])
+    start_dt = _DT.datetime.fromisoformat(dt_from)
+    end_dt   = _DT.datetime.fromisoformat(dt_to)
+    all_ticks = []; current_end = end_dt
+    try:
+        for _ in range(200):
+            params = {'symbol':td_sym,'interval':interval,
+                      'start_date':start_dt.strftime('%Y-%m-%d 00:00:00'),
+                      'end_date':current_end.strftime('%Y-%m-%d 23:59:59'),
+                      'outputsize':5000,'apikey':api_key,'order':'ASC','format':'JSON'}
+            url = 'https://api.twelvedata.com/time_series?' + _up.urlencode(params)
+            with _ur.urlopen(_ur.Request(url,headers={'User-Agent':'TickForge/1.0'}),timeout=30) as r:
+                data = _json.loads(r.read())
+            if data.get('status') == 'error':
+                raise Exception(f"Twelve Data: {data.get('message','API error')}")
+            values = data.get('values',[])
+            if not values: break
+            for v in values:
+                o,h,l,c = float(v['open']),float(v['high']),float(v['low']),float(v['close'])
+                b = _DT.datetime.fromisoformat(v['datetime'])
+                def tick(sec, price):
+                    return (symbol,(b+_DT.timedelta(seconds=sec)).isoformat(),round(price,5),round(price+spread,5))
+                all_ticks.append(tick(0,o))
+                all_ticks += [tick(15,l),tick(30,h)] if o<=c else [tick(15,h),tick(30,l)]
+                all_ticks.append(tick(45,c))
+            earliest = _DT.datetime.fromisoformat(values[0]['datetime'])
+            with _db_lock:
+                conn=get_db(); conn.execute("UPDATE tick_jobs SET ticks=?,updated_at=? WHERE id=?",
+                    (len(all_ticks),now(),jid)); conn.commit(); conn.close()
+            if earliest <= start_dt: break
+            current_end = earliest - _DT.timedelta(minutes=1)
+            _time.sleep(9)  # respect free-tier rate limit (8 req/min)
+        with _db_lock:
+            conn=get_db()
+            conn.execute("DELETE FROM ticks WHERE symbol=?",(symbol,))
+            if all_ticks:
+                all_ticks.sort(key=lambda x:x[1])
+                conn.executemany("INSERT INTO ticks VALUES (?,?,?,?)", all_ticks)
+            conn.execute("UPDATE tick_jobs SET status='complete',ticks=?,updated_at=? WHERE id=?",
+                         (len(all_ticks),now(),jid)); conn.commit(); conn.close()
+    except Exception as e:
+        with _db_lock:
+            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='failed',error=?,updated_at=? WHERE id=?",
+                (str(e),now(),jid)); conn.commit(); conn.close()
+
+@app.post("/ticks/twelvedata")
+async def download_twelvedata(request: Request, background_tasks: BackgroundTasks):
+    uid=get_user(request); body=await request.json()
+    symbol   = body.get("symbol","XAUUSD").upper()
+    dt_from  = body.get("dt_from","2026-01-01")
+    dt_to    = body.get("dt_to", now()[:10])
+    api_key  = body.get("api_key","")
+    interval = body.get("interval","1min")
+    if not api_key: raise HTTPException(400,"Twelve Data API key required")
+    jid=str(uuid.uuid4())[:8]
+    with _db_lock:
+        conn=get_db()
+        conn.execute("INSERT INTO tick_jobs VALUES (?,?,?,?,?,?,?,?)",(jid,uid,symbol,"running",0,None,now(),now()))
+        conn.commit(); conn.close()
+    background_tasks.add_task(_run_twelvedata, jid, symbol, dt_from, dt_to, api_key, interval)
+    return {"id":jid,"status":"running","symbol":symbol,"ticks":0}
 
 @app.post("/ticks/download")
 async def download_ticks(request: Request, background_tasks: BackgroundTasks):
