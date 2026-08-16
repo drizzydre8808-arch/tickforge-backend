@@ -72,10 +72,16 @@ def init_db():
         CREATE TABLE IF NOT EXISTS email_tokens (
             token TEXT PRIMARY KEY, user_id TEXT NOT NULL,
             type TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
-        ALTER TABLE users ADD COLUMN verified INTEGER DEFAULT 0;
-        UPDATE users SET verified=1 WHERE verified IS NULL;
         """)
-        conn.commit(); conn.close()
+        conn.commit()
+        # Add verified column if missing (safe on re-runs)
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN verified INTEGER DEFAULT 0")
+            conn.execute("UPDATE users SET verified=1 WHERE verified IS NULL")
+            conn.commit()
+        except Exception:
+            pass
+        conn.close()
 
 init_db()
 
@@ -374,7 +380,7 @@ def run_grid(ticks_iter, p):
             positions.clear(); last_px=None; open_ts=None
 
         if n%500==0:
-            mtm=equity+fpnl(bid,ask); eq_samples.append(mtm)
+            mtm=equity+fpnl(bid,ask); eq_samples.append([ts, mtm])
             peak=max(peak,mtm); max_dd=max(max_dd,(peak-mtm)/peak*100 if peak>0 else 0)
 
     wins=[t for t in trades if t["pnl"]>0]; losses=[t for t in trades if t["pnl"]<=0]
@@ -395,7 +401,7 @@ def run_grid(ticks_iter, p):
         "profit_factor":pf,"max_drawdown_pct":round(max_dd,2),
         "sharpe":sharpe,"ticks_processed":n,
         "open_layers_at_end":len(positions),
-        "equity_curve":[[i,v] for i,v in enumerate(eq_samples)],
+        "equity_curve":eq_samples,
         "trades_list":trades,
     }
 
