@@ -618,6 +618,15 @@ def _duka_hour(symbol, year, month, day, hour):
         result.append((ts, round(bid_i / factor, 5), round(ask_i / factor, 5)))
     return result
 
+def _save_ticks_csv(symbol, rows):
+    """Write rows [(sym,ts,bid,ask),...] to the ticks CSV file."""
+    path = TICKS_DIR / f"{symbol.upper()}.csv"
+    with open(str(path), "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["symbol","timestamp","bid","ask"])
+        w.writerows(rows)
+    return len(rows)
+
 def _run_dukascopy(jid: str, symbol: str, dt_from: str, dt_to: str):
     import datetime as _DT, time as _time
     sym = symbol.upper()
@@ -635,13 +644,10 @@ def _run_dukascopy(jid: str, symbol: str, dt_from: str, dt_to: str):
                     (len(all_ticks),now(),jid)); conn.commit(); conn.close()
             day += _DT.timedelta(days=1)
             _time.sleep(0.15)
+        _save_ticks_csv(sym, all_ticks)
         with _db_lock:
-            conn=get_db()
-            conn.execute("DELETE FROM ticks WHERE symbol=?",(sym,))
-            if all_ticks:
-                conn.executemany("INSERT INTO ticks VALUES (?,?,?,?)", all_ticks)
-            conn.execute("UPDATE tick_jobs SET status='complete',ticks=?,updated_at=? WHERE id=?",
-                         (len(all_ticks),now(),jid)); conn.commit(); conn.close()
+            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='complete',ticks=?,updated_at=? WHERE id=?",
+                (len(all_ticks),now(),jid)); conn.commit(); conn.close()
     except Exception as e:
         with _db_lock:
             conn=get_db(); conn.execute("UPDATE tick_jobs SET status='failed',error=?,updated_at=? WHERE id=?",
@@ -686,14 +692,11 @@ def _run_twelvedata(jid, symbol, dt_from, dt_to, api_key, interval='1min'):
             if earliest <= start_dt: break
             current_end = earliest - _DT.timedelta(minutes=1)
             _time.sleep(9)  # respect free-tier rate limit (8 req/min)
+        all_ticks.sort(key=lambda x:x[1])
+        _save_ticks_csv(symbol, all_ticks)
         with _db_lock:
-            conn=get_db()
-            conn.execute("DELETE FROM ticks WHERE symbol=?",(symbol,))
-            if all_ticks:
-                all_ticks.sort(key=lambda x:x[1])
-                conn.executemany("INSERT INTO ticks VALUES (?,?,?,?)", all_ticks)
-            conn.execute("UPDATE tick_jobs SET status='complete',ticks=?,updated_at=? WHERE id=?",
-                         (len(all_ticks),now(),jid)); conn.commit(); conn.close()
+            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='complete',ticks=?,updated_at=? WHERE id=?",
+                (len(all_ticks),now(),jid)); conn.commit(); conn.close()
     except Exception as e:
         with _db_lock:
             conn=get_db(); conn.execute("UPDATE tick_jobs SET status='failed',error=?,updated_at=? WHERE id=?",
@@ -792,15 +795,14 @@ def _run_alltick(jid, symbol, dt_from, dt_to, token, kline_type):
                 ticks.append((symbol, t(15,h), round(h,5), round(h+spread,5)))
                 ticks.append((symbol, t(30,l), round(l,5), round(l+spread,5)))
             ticks.append((symbol, t(45,cl), round(cl,5), round(cl+spread,5)))
+        _save_ticks_csv(symbol, ticks)
         with _db_lock:
-            conn=get_db()
-            conn.execute("DELETE FROM ticks WHERE symbol=?",(symbol,))
-            conn.executemany("INSERT INTO ticks VALUES (?,?,?,?)", ticks)
-            conn.execute("UPDATE tick_jobs SET status='complete',ticks=?,updated_at=? WHERE id=?",(len(ticks),now(),jid))
-            conn.commit(); conn.close()
+            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='complete',ticks=?,updated_at=? WHERE id=?",
+                (len(ticks),now(),jid)); conn.commit(); conn.close()
     except Exception as e:
         with _db_lock:
-            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='failed',error=?,updated_at=? WHERE id=?",(str(e),now(),jid)); conn.commit(); conn.close()
+            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='failed',error=?,updated_at=? WHERE id=?",
+                (str(e),now(),jid)); conn.commit(); conn.close()
 
 @app.post("/ticks/alltick")
 async def download_alltick(request: Request, background_tasks: BackgroundTasks):
