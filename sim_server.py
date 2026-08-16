@@ -158,15 +158,18 @@ async def signup(request: Request, response: Response):
     pw    = body.get("password","")
     if not email or not pw: raise HTTPException(400, "email and password required")
     uid = str(uuid.uuid4())
+    auto_verify = 1 if not (GMAIL_USER and GMAIL_PASS) else 0
     with _db_lock:
         conn = get_db()
         try:
-            conn.execute("INSERT INTO users (id,email,pw_hash,created_at,verified) VALUES (?,?,?,?,0)",
-                         (uid, email, hash_pw(pw), now()))
+            conn.execute("INSERT INTO users (id,email,pw_hash,created_at,verified) VALUES (?,?,?,?,?)",
+                         (uid, email, hash_pw(pw), now(), auto_verify))
             conn.commit()
         except sqlite3.IntegrityError:
             conn.close(); raise HTTPException(400, "email already registered")
         conn.close()
+    if not (GMAIL_USER and GMAIL_PASS):
+        return {"email": email, "message": "Account created — you can sign in now."}
     token = make_email_token(uid, "verify", hours=48)
     link  = f"{SITE_URL}/auth/verify/{token}"
     send_email(email, "Verify your TickForge account", f"""
