@@ -567,18 +567,50 @@ async def generate_ticks(request: Request):
             w.writerow([symbol,ts.isoformat(),f"{price:.5f}",f"{price+spread:.5f}"]); ts+=timedelta(seconds=60)
     return {"ticks_generated":n,"source":"synthetic","symbol":symbol}
 
+def _run_dukascopy(jid: str, symbol: str, dt_from: str, dt_to: str):
+    import subprocess, time
+    script  = DATA_DIR / "download_ticks.js"
+    out_csv = TICKS_DIR / f"{symbol.upper()}.csv"
+    if not script.exists():
+        with _db_lock:
+            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='failed',error=?,updated_at=? WHERE id=?",("download_ticks.js not found at C:\\tickforge-data\\",now(),jid)); conn.commit(); conn.close()
+        return
+    try:
+        proc = subprocess.Popen(
+            ["node", str(script), symbol, dt_from, dt_to, str(out_csv)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+        while proc.poll() is None:
+            time.sleep(4)
+            if out_csv.exists():
+                try:
+                    count = max(0, sum(1 for _ in open(str(out_csv))) - 1)
+                    with _db_lock:
+                        conn=get_db(); conn.execute("UPDATE tick_jobs SET ticks=?,updated_at=? WHERE id=?",(count,now(),jid)); conn.commit(); conn.close()
+                except: pass
+        stdout, _ = proc.communicate()
+        if proc.returncode != 0:
+            raise Exception((stdout or "").strip() or "node exited with error")
+        count = max(0, sum(1 for _ in open(str(out_csv))) - 1) if out_csv.exists() else 0
+        with _db_lock:
+            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='complete',ticks=?,updated_at=? WHERE id=?",(count,now(),jid)); conn.commit(); conn.close()
+    except Exception as e:
+        with _db_lock:
+            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='failed',error=?,updated_at=? WHERE id=?",(str(e),now(),jid)); conn.commit(); conn.close()
+
 @app.post("/ticks/download")
-async def download_ticks(request: Request):
-    uid=get_user(request); body=await request.json(); symbol=body.get("symbol","XAUUSD")
-    jid=str(uuid.uuid4())[:8]; csv_path=TICKS_DIR/f"{symbol.upper()}.csv"
-    count=0
-    if csv_path.exists():
-        with open(str(csv_path)) as f: count=max(0,sum(1 for _ in f)-1)
+async def download_ticks(request: Request, background_tasks: BackgroundTasks):
+    uid=get_user(request); body=await request.json()
+    symbol  = body.get("symbol","XAUUSD").upper()
+    dt_from = body.get("dt_from","2020-01-01")
+    dt_to   = body.get("dt_to", now()[:10])
+    jid=str(uuid.uuid4())[:8]
     with _db_lock:
         conn=get_db()
-        conn.execute("INSERT INTO tick_jobs VALUES (?,?,?,?,?,?,?,?)",(jid,uid,symbol,"complete",count,None,now(),now()))
+        conn.execute("INSERT INTO tick_jobs VALUES (?,?,?,?,?,?,?,?)",(jid,uid,symbol,"running",0,None,now(),now()))
         conn.commit(); conn.close()
-    return {"id":jid,"status":"complete","symbol":symbol,"ticks":count}
+    background_tasks.add_task(_run_dukascopy, jid, symbol, dt_from, dt_to)
+    return {"id":jid,"status":"running","symbol":symbol,"ticks":0}
 
 @app.get("/ticks/download/{job_id}")
 async def tick_job(job_id: str, request: Request):
@@ -588,7 +620,8 @@ async def tick_job(job_id: str, request: Request):
         row=conn.execute("SELECT * FROM tick_jobs WHERE id=? AND user_id=?",(job_id,uid)).fetchone()
         conn.close()
     if not row: raise HTTPException(404,"job not found")
-    return dict(row)
+    return {"id":row["id"],"status":row["status"],"symbol":row["symbol"],
+            "ticks":row["ticks"],"error":row["error"]}
 
 @app.get("/ticks/csv/{symbol}")
 async def ticks_csv(symbol: str, request: Request):
