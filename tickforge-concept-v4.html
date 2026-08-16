@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TickForge — Backtest Suite</title>
+<style>
+  :root{
+    --bg:#0a0c11;
+    --panel:linear-gradient(180deg, rgba(23,27,37,0.9), rgba(17,20,28,0.9));
+    --panel-solid:#141822;
+    --panel-2:#1a1f2b;
+    --field:#0f131b;
+    --border:rgba(255,255,255,0.06);
+    --border-soft:rgba(255,255,255,0.04);
+    --text:#e8eaf0;
+    --muted:#838c9e;
+    --muted-2:#565e6f;
+    --accent:#5b8fef;
+    --accent-soft:rgba(91,143,239,0.12);
+    --accent-border:rgba(91,143,239,0.35);
+    --good:#2bc98f;
+    --good-soft:rgba(43,201,143,0.1);
+    --warn:#e0a53f;
+    --warn-soft:rgba(224,165,63,0.1);
+    --bad:#e15b6f;
+    --bad-soft:rgba(225,91,111,0.1);
+    --radius:18px;
+    --radius-sm:11px;
+    --radius-lg:22px;
+    --gap:20px;
+    --ease:cubic-bezier(.4,0,.2,1);
+    --mono:'JetBrains Mono','SF Mono',Consolas,monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:
+      radial-gradient(1200px 500px at 15% -10%, rgba(91,143,239,0.07), transparent 60%),
+      radial-gradient(1000px 500px at 100% 0%, rgba(43,201,143,0.05), transparent 55%),
+      var(--bg);
+    color:var(--text); font-family:var(--sans); font-size:13px; -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---- ticker ---- */
+  .ticker-wrap{background:rgba(5,6,10,0.7); backdrop-filter:blur(10px); border-bottom:1px solid var(--border-soft); overflow:hidden; height:34px; display:flex; align-items:center;}
+  .ticker{display:flex; gap:32px; white-space:nowrap; animation:scroll 30s linear infinite; padding-left:100%; font-family:var(--mono); font-size:11.5px;}
+  @keyframes scroll{from{transform:translateX(0);} to{transform:translateX(-100%);}}
+  .tick-item{color:var(--muted);}
+  .tick-item b{color:var(--text); font-weight:600; margin-right:6px;}
+  .tick-up{color:var(--good);} .tick-down{color:var(--bad);}
+
+  /* ---- top nav ---- */
+  .topbar{display:flex; align-items:center; justify-content:space-between; padding:16px 32px; border-bottom:1px solid var(--border-soft); position:sticky; top:0; background:rgba(10,12,17,0.75); backdrop-filter:blur(14px); z-index:10;}
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand-mark{width:34px; height:34px; border-radius:12px; background:linear-gradient(145deg,#6ea0ff,#5b8fef); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:#0a0c11; box-shadow:0 4px 14px rgba(91,143,239,0.35), inset 0 1px 0 rgba(255,255,255,0.25);}
+  .brand-name{font-weight:700; font-size:14.5px;}
+  .brand-sub{font-size:10.5px; color:var(--muted); margin-top:1px;}
+  nav{display:flex; gap:3px; background:rgba(255,255,255,0.03); padding:4px; border-radius:14px; border:1px solid var(--border-soft);}
+  nav button{background:transparent; border:none; color:var(--muted); padding:8px 15px; border-radius:10px; font-size:12.5px; font-weight:500; cursor:pointer; transition:all .25s var(--ease); font-family:var(--sans);}
+  nav button:hover{color:var(--text);}
+  nav button.active{color:#fff; background:linear-gradient(145deg,#6ea0ff,#5b8fef); box-shadow:0 4px 12px rgba(91,143,239,0.3);}
+
+  main{padding:28px 32px 60px; max-width:1280px; margin:0 auto;}
+
+  /* ---- smooth panel system ---- */
+  .panel{
+    background:var(--panel); background-color:var(--panel-solid);
+    border:1px solid var(--border); border-radius:var(--radius); padding:24px; margin-bottom:var(--gap);
+    box-shadow:0 1px 0 rgba(255,255,255,0.03) inset, 0 20px 40px -24px rgba(0,0,0,0.6);
+    transition:border-color .25s var(--ease), box-shadow .25s var(--ease);
+  }
+  .panel:hover{border-color:rgba(255,255,255,0.1);}
+  .stack{display:flex; flex-direction:column; gap:var(--gap);}
+  .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:var(--gap);}
+  .grid-3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:var(--gap);}
+  @media(max-width:960px){.grid-2,.grid-3{grid-template-columns:1fr;}}
+
+  .panel-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;}
+  .panel-head-left{display:flex; align-items:center; gap:10px;}
+  .step-num{width:22px; height:22px; border-radius:8px; background:var(--accent-soft); color:var(--accent); font-size:10.5px; font-weight:700; display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 1px var(--accent-border);}
+  .panel-title{font-size:13.5px; font-weight:600; letter-spacing:0.1px;}
+  .panel-sub{font-size:11px; color:var(--muted-2); font-family:var(--mono);}
+
+  .toggle-link{font-size:11.5px; color:var(--accent); cursor:pointer; font-weight:500; transition:opacity .2s;}
+  .toggle-link:hover{opacity:.7;}
+
+  /* form elements — smoother, rounder */
+  label{display:block; font-size:11px; color:var(--muted); margin-bottom:7px; margin-top:16px; font-weight:500;}
+  .field-group > label:first-child{margin-top:0;}
+  input[type=text], input[type=number], input[type=date], input[type=password], select{
+    width:100%; background:var(--field); border:1px solid var(--border); border-radius:var(--radius-sm);
+    padding:10px 13px; color:var(--text); font-size:12.5px; font-family:var(--mono); height:38px;
+    transition:border-color .2s var(--ease), box-shadow .2s var(--ease), background .2s var(--ease);
+  }
+  select{font-family:var(--sans); appearance:none;}
+  input:hover, select:hover{border-color:rgba(255,255,255,0.14);}
+  input:focus, select:focus{outline:none; border-color:var(--accent-border); box-shadow:0 0 0 4px var(--accent-soft); background:rgba(91,143,239,0.03);}
+  .row-2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .row-3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;}
+  .unit-field{position:relative;}
+  .unit-field input{padding-right:46px;}
+  .unit-suffix{position:absolute; right:13px; top:50%; transform:translateY(-50%); font-size:10.5px; color:var(--muted-2); font-family:var(--mono);}
+
+  .dropzone{border:1.5px dashed rgba(255,255,255,0.12); border-radius:var(--radius-sm); padding:30px 16px; text-align:center; color:var(--muted); font-size:12.5px; cursor:pointer; transition:all .25s var(--ease);}
+  .dropzone:hover{border-color:var(--accent-border); background:var(--accent-soft); transform:translateY(-1px);}
+  .dropzone .icon{font-size:20px; margin-bottom:8px; opacity:.6;}
+  .dropzone .hint{font-size:10.5px; color:var(--muted-2); margin-top:4px;}
+
+  .file-row{display:flex; align-items:center; gap:10px; background:var(--field); border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:10px 13px; margin-top:8px; font-size:12px; transition:border-color .2s;}
+  .file-row:hover{border-color:rgba(255,255,255,0.12);}
+  .file-row .tag{width:21px; height:21px; border-radius:7px; font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .tag-ea{background:var(--accent-soft); color:var(--accent);}
+  .tag-set{background:var(--good-soft); color:var(--good);}
+  .file-row .name{flex:1; color:var(--text);}
+  .file-row .meta{color:var(--muted-2); font-size:10.5px; font-family:var(--mono);}
+
+  .chip-row{display:flex; gap:7px; flex-wrap:wrap;}
+  .chip{padding:7px 14px; border-radius:999px; border:1px solid var(--border); background:var(--field); color:var(--muted); font-size:11.5px; font-family:var(--mono); cursor:pointer; transition:all .2s var(--ease);}
+  .chip.active{background:linear-gradient(145deg,#6ea0ff,#5b8fef); border-color:transparent; color:#fff; box-shadow:0 3px 10px rgba(91,143,239,0.3);}
+  .chip:hover:not(.active){border-color:rgba(255,255,255,0.18); color:var(--text); transform:translateY(-1px);}
+
+  .check-row{display:flex; align-items:center; gap:10px; padding:9px 0; font-size:12.5px; color:var(--text); cursor:pointer;}
+  .check-row input{width:16px; height:16px; accent-color:var(--accent); cursor:pointer;}
+  .check-desc{font-size:10.5px; color:var(--muted-2); margin-left:26px; margin-top:-4px;}
+
+  /* buttons — smooth, consistent */
+  .btn{border:none; border-radius:12px; font-family:var(--sans); font-weight:600; cursor:pointer; transition:all .2s var(--ease); font-size:12.5px; padding:10px 18px; display:inline-flex; align-items:center; gap:6px;}
+  .btn-primary{background:linear-gradient(145deg,#6ea0ff,#5b8fef); color:#0a0c11; box-shadow:0 6px 18px rgba(91,143,239,0.3);}
+  .btn-primary:hover{transform:translateY(-1px); box-shadow:0 8px 22px rgba(91,143,239,0.4);}
+  .btn-primary:active{transform:translateY(0);}
+  .btn-secondary{background:var(--panel-2); color:var(--text); border:1px solid var(--border);}
+  .btn-secondary:hover{border-color:rgba(255,255,255,0.2); transform:translateY(-1px);}
+  .btn-ghost{background:transparent; color:var(--muted); border:1px solid var(--border-soft); padding:8px 13px; border-radius:10px;}
+  .btn-ghost:hover{color:var(--text); border-color:rgba(255,255,255,0.15); background:rgba(255,255,255,0.02);}
+  .btn-block{width:100%; justify-content:center; padding:13px;}
+  .btn-row{display:flex; gap:8px; flex-wrap:wrap;}
+
+  .run-note{text-align:center; font-size:10.5px; color:var(--muted-2); margin-top:10px; font-family:var(--mono);}
+
+  .adv-body{margin-top:18px; padding-top:18px; border-top:1px solid var(--border-soft); max-height:0; overflow:hidden; opacity:0; transition:max-height .35s var(--ease), opacity .3s var(--ease), margin .35s var(--ease), padding .35s var(--ease);}
+  .adv-body.open{max-height:600px; opacity:1;}
+
+  .toolbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:10px;}
+  .toolbar-left{font-family:var(--mono); font-size:11px; color:var(--muted);}
+
+  table{width:100%; border-collapse:separate; border-spacing:0 2px; font-size:12px;}
+  th{text-align:left; color:var(--muted-2); font-weight:600; font-size:10px; letter-spacing:0.4px; text-transform:uppercase; padding:0 13px 10px;}
+  td{padding:13px; background:rgba(255,255,255,0.015); color:var(--text); vertical-align:middle; transition:background .2s;}
+  tr:hover td{background:rgba(255,255,255,0.03);}
+  td:first-child{border-radius:10px 0 0 10px;}
+  td:last-child{border-radius:0 10px 10px 0;}
+  tr.best td{background:var(--good-soft);}
+  tr.best:hover td{background:rgba(43,201,143,0.16);}
+  .pos{color:var(--good);} .neg{color:var(--bad);}
+  .badge{display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:999px; font-size:10px; font-weight:600; font-family:var(--sans);}
+  .badge-good{background:var(--good-soft); color:var(--good);}
+  .badge-warn{background:var(--warn-soft); color:var(--warn);}
+  .dot{width:5px; height:5px; border-radius:50%; background:currentColor;}
+  .row-check{accent-color:var(--accent); cursor:pointer;}
+
+  .verdict-bar{margin-top:18px; padding:15px 18px; border-radius:var(--radius-sm); background:var(--good-soft); border:1px solid rgba(43,201,143,0.22); display:flex; gap:11px; align-items:flex-start; font-size:12px; line-height:1.55; color:#c7ecdd;}
+  .verdict-bar .vicon{color:var(--good); font-size:14px; flex-shrink:0;}
+
+  /* ---- AI analysis panel ---- */
+  .ai-panel{border-color:rgba(91,143,239,0.18); background:linear-gradient(180deg, rgba(91,143,239,0.05), rgba(17,20,28,0.9)), var(--panel-solid);}
+  .ai-badge{display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:600; color:var(--accent); background:var(--accent-soft); padding:4px 10px; border-radius:999px; box-shadow:inset 0 0 0 1px var(--accent-border);}
+  .ai-badge .spark{font-size:11px;}
+  .ai-grid{display:grid; grid-template-columns:180px 1fr; gap:24px; margin-top:6px;}
+  @media(max-width:820px){.ai-grid{grid-template-columns:1fr;}}
+  .risk-meter{display:flex; flex-direction:column; align-items:center; text-align:center; padding:18px 12px; background:var(--field); border:1px solid var(--border-soft); border-radius:var(--radius-sm);}
+  .risk-ring{width:96px; height:96px; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; background:conic-gradient(var(--good) 0deg 252deg, rgba(255,255,255,0.06) 252deg 360deg);}
+  .risk-ring::before{content:""; position:absolute; width:74px; height:74px; border-radius:50%; background:var(--field);}
+  .risk-ring span{position:relative; font-family:var(--mono); font-size:19px; font-weight:700; color:var(--good);}
+  .risk-label{font-size:11px; color:var(--muted); margin-top:12px; font-weight:600;}
+  .risk-sub{font-size:10px; color:var(--muted-2); margin-top:3px; font-family:var(--mono);}
+  .finding-list{display:flex; flex-direction:column; gap:2px;}
+  .finding-row{display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:10px; transition:background .2s;}
+  .finding-row:hover{background:rgba(255,255,255,0.025);}
+  .finding-icon{width:20px; height:20px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:11px; flex-shrink:0; margin-top:1px;}
+  .finding-icon.ok{background:var(--good-soft); color:var(--good);}
+  .finding-icon.warn{background:var(--warn-soft); color:var(--warn);}
+  .finding-icon.bad{background:var(--bad-soft); color:var(--bad);}
+  .finding-text b{color:var(--text); font-weight:600;}
+  .finding-text{font-size:12px; color:var(--muted); line-height:1.5;}
+  .ai-chat{margin-top:18px; padding-top:18px; border-top:1px solid var(--border-soft);}
+  .chat-msg{display:flex; gap:10px; margin-bottom:14px; font-size:12px; line-height:1.55;}
+  .chat-avatar{width:24px; height:24px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;}
+  .chat-avatar.ai{background:linear-gradient(145deg,#6ea0ff,#5b8fef); color:#0a0c11;}
+  .chat-avatar.user{background:var(--panel-2); color:var(--muted); border:1px solid var(--border);}
+  .chat-bubble{color:var(--muted); padding-top:2px;}
+  .chat-bubble b{color:var(--text);}
+  .chat-input-row{display:flex; gap:8px; margin-top:14px;}
+  .chat-input-row input{flex:1;}
+
+  .chart-wrap{margin-top:18px; padding:18px; background:var(--field); border:1px solid var(--border-soft); border-radius:var(--radius-sm);}
+  .chart-head{display:flex; justify-content:space-between; font-size:10.5px; color:var(--muted-2); font-family:var(--mono); margin-bottom:10px;}
+
+  .coverage-bar{height:6px; background:rgba(255,255,255,0.06); border-radius:99px; overflow:hidden; margin-top:6px; width:140px;}
+  .coverage-fill{height:100%; background:linear-gradient(90deg,#5b8fef,#2bc98f); border-radius:99px;}
+
+  .hidden{display:none;}
+  footer{text-align:center; padding:34px; color:var(--muted-2); font-size:10.5px; font-family:var(--mono);}
+
+  /* ---- auth ---- */
+  .auth-overlay{position:fixed; inset:0; z-index:100; background:rgba(5,6,10,0.82); backdrop-filter:blur(10px); display:flex; align-items:center; justify-content:center;}
+  .auth-overlay.hidden, .user-chip.hidden{display:none;}
+  .auth-panel{width:min(380px, calc(100vw - 40px));}
+  .auth-brand{display:flex; align-items:center; gap:12px; margin-bottom:20px;}
+  .auth-tabs{display:flex; gap:7px; margin-bottom:6px;}
+  .auth-error{font-size:11.5px; color:var(--bad); margin-top:12px; min-height:16px; font-family:var(--mono);}
+  .user-chip{display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--muted); font-family:var(--mono);}
+  .user-chip .signout{color:var(--accent); cursor:pointer; font-family:var(--sans); font-weight:500;}
+  .user-chip .signout:hover{opacity:.7;}
+</style>
+</head>
+<body>
+
+<div class="ticker-wrap"><div class="ticker" id="ticker"></div></div>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">TF</div>
+    <div>
+      <div class="brand-name">TickForge</div>
+      <div class="brand-sub">Any EA · any pair · every timeframe · on real ticks</div>
+    </div>
+  </div>
+  <nav>
+    <button class="active" data-page="new">New Test</button>
+    <button data-page="journal">Journal</button>
+    <button data-page="leaderboard">Leaderboard</button>
+    <button data-page="history">History</button>
+    <button data-page="ticks">Tick Data</button>
+  </nav>
+  <div class="user-chip hidden" id="user-chip">
+    <span id="user-email"></span>
+    <span class="signout" onclick="signOut()">sign out</span>
+  </div>
+</div>
+
+<!-- AUTH GATE -->
+<div class="auth-overlay hidden" id="auth-overlay">
+  <div class="panel auth-panel">
+    <div class="auth-brand">
+      <div class="brand-mark">TF</div>
+      <div>
+        <div class="brand-name">TickForge</div>
+        <div class="brand-sub">sign in to run backtests</div>
+      </div>
+    </div>
+    <div class="auth-tabs chip-row">
+      <div class="chip active" id="auth-tab-signin" onclick="setAuthMode('signin')">Sign in</div>
+      <div class="chip" id="auth-tab-signup" onclick="setAuthMode('signup')">Create account</div>
+    </div>
+    <div class="field-group">
+      <label>Email</label>
+      <input type="text" id="a-email" autocomplete="email" placeholder="you@example.com">
+      <label>Password</label>
+      <input type="password" id="a-password" autocomplete="current-password" placeholder="min 8 characters">
+    </div>
+    <div style="margin-top:18px;">
+      <button class="btn btn-primary btn-block" id="a-submit" onclick="submitAuth()">Sign in</button>
+    </div>
+    <div class="auth-error" id="a-error"></div>
+  </div>
+</div>
+
+<main>
+
+  <!-- NEW TEST PAGE -->
+  <div id="page-new">
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-head-left"><div class="step-num">1</div><div class="panel-title">Your files — native MT5 tests</div></div>
+          <div class="panel-sub" id="bridge-status">bridge: checking…</div>
+        </div>
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('ea-file-input').click()">
+          <div class="icon">⇧</div>
+          Drag your <b style="color:var(--text)">EA (.ex5 / .mq5)</b> and <b style="color:var(--text)">settings (.set)</b> here
+          <div class="hint">or click to browse — runs in MT5's own Strategy Tester via the Windows bridge</div>
+        </div>
+        <input type="file" id="ea-file-input" multiple accept=".ex5,.mq5,.set,.algo" style="display:none;">
+        <div id="ea-file-list"></div>
+        <div class="field-group">
+          <div class="row-2">
+            <div><label>Expert Advisor</label><select id="n-ea-select"><option value="">upload an EA first</option></select></div>
+            <div><label>Settings (.set)</label><select id="n-set-select"><option value="">none</option></select></div>
+          </div>
+          <div class="row-2">
+            <div><label>Tester timeframe</label><select id="n-tf"><option>M1</option><option>M5</option><option>M15</option><option>M30</option><option selected>H1</option><option>H4</option><option>D1</option></select></div>
+            <div><label>&nbsp;</label><button class="btn btn-secondary btn-block" id="run-native-btn" onclick="runNativeTest()">Run native MT5 test</button></div>
+          </div>
+        </div>
+        <div class="run-note" id="native-status" style="text-align:left;"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-head-left"><div class="step-num">2</div><div class="panel-title">What to test</div></div>
+        </div>
+        <div class="field-group">
+          <label>Pair / symbol</label>
+          <input type="text" id="f-symbol" value="XAUUSD">
+          <div class="row-2">
+            <div><label>From</label><input type="date" id="f-from" value="2024-01-01"></div>
+            <div><label>To</label><input type="date" id="f-to" value="2024-02-01"></div>
+          </div>
+          <div class="row-2">
+            <div><label>Deposit</label><input type="number" id="f-deposit" value="10000"></div>
+            <div><label>Direction</label><select id="f-direction"><option>buy</option><option>sell</option></select></div>
+          </div>
+          <div class="row-3">
+            <div><label>Grid step</label><div class="unit-field"><input type="number" id="f-grid-step" value="25"><span class="unit-suffix">pips</span></div></div>
+            <div><label>Lot multiplier</label><input type="number" id="f-lot-mult" step="0.1" value="1.6"></div>
+            <div><label>Initial lot</label><input type="number" id="f-initial-lot" step="0.01" value="0.01"></div>
+          </div>
+          <div class="row-2">
+            <div><label>Take profit</label><div class="unit-field"><input type="number" id="f-tp" value="25"><span class="unit-suffix">$</span></div></div>
+            <div><label>Max layers</label><input type="number" id="f-max-layers" value="8"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EXECUTION & COST MODEL -->
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-head-left"><div class="step-num">3</div><div class="panel-title">Execution &amp; cost model</div></div>
+        <div class="panel-sub">realism settings</div>
+      </div>
+      <div class="grid-3">
+        <div class="field-group">
+          <label>Spread model</label>
+          <select><option>Variable — real historical spread</option><option>Fixed</option><option>Zero (optimistic)</option></select>
+          <label>Slippage</label>
+          <div class="unit-field"><input type="number" id="f-slippage" step="0.1" value="0"><span class="unit-suffix">pips</span></div>
+        </div>
+        <div class="field-group">
+          <label>Commission</label>
+          <div class="unit-field"><input type="number" id="f-commission" value="7"><span class="unit-suffix">$/lot</span></div>
+          <label>Swap model</label>
+          <select><option>Broker default (triple on Wed)</option><option>None</option></select>
+        </div>
+        <div class="field-group">
+          <label>Leverage</label>
+          <select><option>1:500</option><option>1:200</option><option>1:100</option><option>1:30</option></select>
+          <label>Latency simulation</label>
+          <div class="unit-field"><input type="number" value="40"><span class="unit-suffix">ms</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SESSION & NEWS FILTERS -->
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-head-left"><div class="step-num">4</div><div class="panel-title">Session &amp; news filters</div></div>
+        <div class="panel-sub">optional</div>
+      </div>
+      <div class="grid-3">
+        <label class="check-row"><input type="checkbox" checked> Asian session (00:00–08:00 UTC)</label>
+        <label class="check-row"><input type="checkbox" checked> London session (08:00–16:00 UTC)</label>
+        <label class="check-row"><input type="checkbox" checked> New York session (13:00–21:00 UTC)</label>
+      </div>
+      <div class="grid-2" style="margin-top:4px;">
+        <label class="check-row"><input type="checkbox"> Skip high-impact news windows (±15 min)</label>
+        <label class="check-row"><input type="checkbox"> Weekend gap simulation</label>
+      </div>
+    </div>
+
+    <!-- OPTIMIZATION / VALIDATION TOOLS -->
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-head-left"><div class="step-num">5</div><div class="panel-title">Optimization &amp; validation</div></div>
+        <div class="toggle-link" onclick="toggleAdv()">show options ▾</div>
+      </div>
+      <div class="chip-row">
+        <div class="chip active">Single run</div>
+        <div class="chip">Parameter sweep</div>
+        <div class="chip">Walk-forward</div>
+        <div class="chip">Monte Carlo</div>
+      </div>
+      <div class="adv-body" id="adv-body">
+        <div class="grid-3">
+          <div class="field-group">
+            <label>Sweep parameter</label>
+            <select><option>Grid step (points)</option><option>Lot multiplier</option><option>TP distance</option></select>
+            <label>Range</label>
+            <div class="row-2"><input type="number" placeholder="min" value="10"><input type="number" placeholder="max" value="50"></div>
+          </div>
+          <div class="field-group">
+            <label>Walk-forward split</label>
+            <select><option>70% in-sample / 30% out-of-sample</option><option>50 / 50</option><option>Anchored, 6 windows</option></select>
+          </div>
+          <div class="field-group">
+            <label>Monte Carlo runs</label>
+            <input type="number" value="500">
+            <label>Randomize</label>
+            <select><option>Trade order + slippage</option><option>Trade order only</option></select>
+          </div>
+        </div>
+        <div class="run-note" style="text-align:left; margin-top:12px;">Sweep + walk-forward + Monte Carlo can be combined — TickForge queues each pass and merges results into one ranked table.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="btn-row">
+        <button class="btn btn-primary btn-block" style="flex:1;" id="run-btn" onclick="runTest()">Run backtest</button>
+        <button class="btn btn-secondary" title="Save this configuration">Save as template</button>
+        <button class="btn btn-secondary" title="Queue without running now">Add to queue</button>
+      </div>
+      <div class="run-note" id="run-status">runs against tick data stored locally — check the Tick Data page for coverage</div>
+    </div>
+
+    <!-- RESULTS -->
+    <div class="panel" id="results">
+      <div class="toolbar">
+        <div class="panel-head-left"><div class="step-num">6</div><div class="panel-title">Results</div></div>
+        <div class="btn-row">
+          <button class="btn btn-ghost">⇩ Export CSV</button>
+          <button class="btn btn-ghost">⇩ Export PDF report</button>
+          <button class="btn btn-ghost">⇄ Compare selected</button>
+        </div>
+      </div>
+      <div class="toolbar-left" style="margin-bottom:12px;" id="results-label">no tests run yet — configure above and hit Run backtest</div>
+      <table>
+        <thead><tr>
+          <th></th><th>ID</th><th>Net Profit</th><th>Return</th><th>PF</th><th>Max DD</th><th>Sharpe</th><th>Trades</th><th>Win%</th><th>Ticks</th>
+        </tr></thead>
+        <tbody id="results-tbody">
+        </tbody>
+      </table>
+
+      <div class="chart-wrap hidden" id="equity-wrap">
+        <div class="chart-head"><span id="equity-title">Equity curve</span><span id="equity-range"></span></div>
+        <svg viewBox="0 0 600 120" width="100%" height="120" preserveAspectRatio="none">
+          <polyline fill="none" stroke="#2bc98f" stroke-width="1.6" id="equity-line" points="" />
+        </svg>
+      </div>
+
+      <div class="verdict-bar hidden" id="verdict-bar">
+        <div class="vicon" id="verdict-icon">✓</div>
+        <div id="verdict-text"></div>
+      </div>
+    </div>
+
+    <!-- AI ANALYSIS -->
+    <div class="panel ai-panel">
+      <div class="panel-head">
+        <div class="panel-head-left">
+          <div class="step-num">7</div>
+          <div class="panel-title">AI analysis</div>
+        </div>
+        <button class="btn btn-secondary" id="ai-analyze-btn" onclick="analyzeLastTest()">✦ Analyze last test</button>
+      </div>
+
+      <div class="ai-grid">
+        <div class="risk-meter">
+          <div class="risk-ring" id="ai-ring" style="background:conic-gradient(rgba(255,255,255,0.06) 0deg 360deg);"><span id="ai-risk">—</span></div>
+          <div class="risk-label">Overfit risk</div>
+          <div class="risk-sub" id="ai-risk-sub">0–100 scale</div>
+        </div>
+
+        <div class="finding-list" id="ai-findings">
+          <div class="finding-row"><div class="finding-text">Run a backtest, then hit <b>Analyze last test</b> — Claude reviews the metrics, trades, and equity curve for real.</div></div>
+        </div>
+      </div>
+
+      <div class="ai-chat" id="ai-chat">
+        <div class="chat-input-row">
+          <input type="text" id="ai-question" placeholder="Ask about this result — e.g. 'is this overfit?'">
+          <button class="btn btn-primary" id="ai-ask-btn" onclick="askAI()">Ask</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JOURNAL -->
+  <div id="page-journal" class="hidden">
+    <div class="grid-3" id="j-stats">
+      <div class="panel"><div class="panel-sub">Net P&amp;L</div><div style="font-size:22px; font-weight:700; margin-top:6px;" id="j-net">—</div></div>
+      <div class="panel"><div class="panel-sub">Win rate · Profit factor</div><div style="font-size:22px; font-weight:700; margin-top:6px;" id="j-winpf">—</div></div>
+      <div class="panel"><div class="panel-sub">Trades · Avg win / loss</div><div style="font-size:22px; font-weight:700; margin-top:6px;" id="j-counts">—</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-head-left"><div class="panel-title">P&amp;L calendar</div></div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" onclick="calShift(-1)">◀</button>
+          <span class="panel-sub" id="cal-label" style="align-self:center; min-width:110px; text-align:center;"></span>
+          <button class="btn btn-ghost" onclick="calShift(1)">▶</button>
+        </div>
+      </div>
+      <div id="cal-grid" style="display:grid; grid-template-columns:repeat(7,1fr); gap:4px;"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-head-left"><div class="panel-title">Chart replay</div></div>
+        <div class="btn-row">
+          <select id="r-tf" style="width:auto; height:34px;"><option>M15</option><option selected>H1</option><option>H4</option><option>D1</option></select>
+          <button class="btn btn-secondary" id="r-load" onclick="loadReplay()">Load XAUUSD around trades</button>
+          <button class="btn btn-primary" id="r-play" onclick="toggleReplay()">▶ Replay</button>
+        </div>
+      </div>
+      <canvas id="r-canvas" width="1160" height="320" style="width:100%; background:var(--field); border:1px solid var(--border-soft); border-radius:11px;"></canvas>
+      <input type="range" id="r-scrub" min="0" max="100" value="100" style="width:100%; margin-top:10px; accent-color:var(--accent);">
+      <div class="run-note" id="r-status" style="text-align:left;">load bars to replay price action with your trades marked</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-head-left"><div class="panel-title">Import trades</div></div>
+      </div>
+      <div class="grid-3">
+        <div class="field-group">
+          <label style="margin-top:0;">From a backtest</label>
+          <select id="j-test-select"></select>
+          <div style="margin-top:10px;"><button class="btn btn-secondary" onclick="importFromTest()">Import backtest trades</button></div>
+        </div>
+        <div class="field-group">
+          <label style="margin-top:0;">From your MT5 bridge (mt5-trading-server)</label>
+          <input type="text" id="j-mt5-url" value="http://localhost:3001">
+          <div style="margin-top:10px;"><button class="btn btn-secondary" onclick="importFromMT5()">Sync MT5 trades</button></div>
+        </div>
+        <div class="field-group">
+          <label style="margin-top:0;">From CSV (ticket,symbol,side,volume,open_time,close_time,open_price,close_price,profit)</label>
+          <input type="file" id="j-csv-file" accept=".csv,text/csv" style="font-size:11.5px; color:var(--muted);">
+          <div style="margin-top:10px;"><button class="btn btn-secondary" onclick="importFromCSV()">Import CSV</button></div>
+        </div>
+      </div>
+      <div class="run-note" id="j-import-status" style="text-align:left;"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-head-left"><div class="panel-title">Trades</div></div></div>
+      <table>
+        <thead><tr><th>Closed</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>Source</th></tr></thead>
+        <tbody id="j-trades-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- LEADERBOARD -->
+  <div id="page-leaderboard" class="hidden">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-head-left"><div class="panel-title">Leaderboard — shared results</div></div></div>
+      <table>
+        <thead><tr><th>EA</th><th>Pair</th><th>TF</th><th>Return</th><th>PF</th><th>Max DD</th><th>Verified</th></tr></thead>
+        <tbody>
+          <tr><td>Gold_Ox_EA v3</td><td>XAUUSD</td><td>H1</td><td class="pos">+184.2%</td><td>1.61</td><td>22.4%</td><td><span class="badge badge-good"><span class="dot"></span>tick-verified</span></td></tr>
+          <tr><td>BlueAlertsBot</td><td>XAUUSD</td><td>H4</td><td class="pos">+96.7%</td><td>1.38</td><td>14.1%</td><td><span class="badge badge-good"><span class="dot"></span>tick-verified</span></td></tr>
+          <tr><td>BinaryDestroyerBot</td><td>EURUSD</td><td>M15</td><td class="pos">+61.3%</td><td>1.22</td><td>19.6%</td><td><span class="badge badge-warn"><span class="dot"></span>single window</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="page-history" class="hidden">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-head-left"><div class="panel-title">Your test history</div></div></div>
+      <table>
+        <thead><tr><th>Date</th><th>ID</th><th>Symbol · Range</th><th>Return</th><th>Status</th></tr></thead>
+        <tbody id="history-tbody">
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TICK DATA -->
+  <div id="page-ticks" class="hidden">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-head-left"><div class="panel-title">Tick data</div></div></div>
+      <div class="toolbar-left" style="margin-bottom:16px;">Real ticks download from Dukascopy's free historical feed (hourly files — long ranges take a while; pull in chunks). Synthetic is instant, for pipeline testing. Cached — re-testing a period you already have is instant.</div>
+      <div class="row-3" style="margin-bottom:14px;">
+        <div><label style="margin-top:0;">Symbol</label><input type="text" id="t-symbol" value="XAUUSD"></div>
+        <div><label style="margin-top:0;">From</label><input type="date" id="t-from" value="2024-01-01"></div>
+        <div><label style="margin-top:0;">To</label><input type="date" id="t-to" value="2024-01-08"></div>
+      </div>
+      <div class="btn-row" style="margin-bottom:8px;">
+        <button class="btn btn-primary" id="t-download-btn" onclick="pullTicks('download')">⇩ Download real ticks (Dukascopy)</button>
+        <button class="btn btn-secondary" id="t-generate-btn" onclick="pullTicks('generate')">Generate synthetic</button>
+      </div>
+      <div class="run-note" id="t-status" style="text-align:left; margin-bottom:16px;"></div>
+      <table>
+        <thead><tr><th>Pair</th><th>Ticks</th><th>From</th><th>To</th></tr></thead>
+        <tbody id="ticks-tbody">
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<footer>TickForge concept — MT4 · MT5 · cTrader · TradingView execution, one unified results layer</footer>
+
+<script>
+  const symbols = [
+    {s:'XAUUSD', p:2418.32, d:1}, {s:'EURUSD', p:1.0842, d:-1}, {s:'GBPUSD', p:1.2691, d:1},
+    {s:'USDJPY', p:157.24, d:-1}, {s:'BTCUSD', p:64210, d:1}, {s:'NAS100', p:19842, d:1},
+    {s:'AUDUSD', p:0.6621, d:-1}, {s:'USDCAD', p:1.3688, d:1}
+  ];
+  function renderTicker(){
+    const el = document.getElementById('ticker');
+    const items = symbols.map(x=>{
+      const cls = x.d>0 ? 'tick-up':'tick-down';
+      const arrow = x.d>0 ? '▲':'▼';
+      return `<span class="tick-item"><b>${x.s}</b><span class="${cls}">${x.p} ${arrow}</span></span>`;
+    }).join('');
+    el.innerHTML = items + items;
+  }
+  renderTicker();
+  setInterval(()=>{
+    symbols.forEach(x=>{
+      const delta = (Math.random()-0.5) * (x.p * 0.0006);
+      x.p = +(x.p + delta).toFixed(x.p > 100 ? 2 : 4);
+      x.d = delta >= 0 ? 1 : -1;
+    });
+    renderTicker();
+  }, 2200);
+
+  const pages = ['new','journal','leaderboard','history','ticks'];
+  document.querySelectorAll('nav button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      pages.forEach(p=>document.getElementById('page-'+p).classList.add('hidden'));
+      document.getElementById('page-'+btn.dataset.page).classList.remove('hidden');
+      if(btn.dataset.page === 'ticks') loadCoverage();
+      if(btn.dataset.page === 'history') loadHistory();
+      if(btn.dataset.page === 'journal') loadJournal();
+    });
+  });
+
+  document.querySelectorAll('.chip-row .chip').forEach(c=>{
+    c.addEventListener('click', ()=>c.classList.toggle('active'));
+  });
+
+  function toggleAdv(){
+    document.getElementById('adv-body').classList.toggle('open');
+  }
+
+  // ---- live backend wiring ----
+  const API = location.protocol === 'file:' ? 'http://localhost:8000' : '';
+  const $ = id => document.getElementById(id);
+  const sleep = ms => new Promise(r=>setTimeout(r, ms));
+
+  // ---- auth ----
+  let authMode = 'signin';
+
+  function setAuthMode(mode){
+    authMode = mode;
+    $('auth-tab-signin').classList.toggle('active', mode === 'signin');
+    $('auth-tab-signup').classList.toggle('active', mode === 'signup');
+    $('a-submit').textContent = mode === 'signin' ? 'Sign in' : 'Create account';
+    $('a-password').autocomplete = mode === 'signin' ? 'current-password' : 'new-password';
+    $('a-error').textContent = '';
+  }
+
+  function showAuth(){ $('auth-overlay').classList.remove('hidden'); $('a-email').focus(); }
+
+  function setUser(email){
+    $('auth-overlay').classList.add('hidden');
+    $('user-email').textContent = email;
+    $('user-chip').classList.remove('hidden');
+  }
+
+  async function checkAuth(){
+    try{
+      const r = await fetch(`${API}/auth/me`);
+      if(r.ok){ setUser((await r.json()).email); return; }
+    }catch(e){ /* backend down — fall through to the gate */ }
+    showAuth();
+  }
+
+  async function submitAuth(){
+    const email = $('a-email').value.trim();
+    const password = $('a-password').value;
+    if(!email || !password){ $('a-error').textContent = 'enter email and password'; return; }
+    $('a-submit').disabled = true;
+    $('a-error').textContent = '';
+    try{
+      const r = await fetch(`${API}/auth/${authMode === 'signin' ? 'login' : 'signup'}`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({email, password}),
+      });
+      const j = await r.json();
+      if(!r.ok) throw new Error(j.detail || r.statusText);
+      $('a-password').value = '';
+      setUser(j.email);
+    }catch(e){
+      $('a-error').textContent = e.message;
+    }finally{
+      $('a-submit').disabled = false;
+    }
+  }
+
+  async function signOut(){
+    await fetch(`${API}/auth/logout`, {method:'POST'});
+    location.reload();
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    checkAuth();
+    $('a-password').addEventListener('keydown', e=>{ if(e.key === 'Enter') submitAuth(); });
+    $('a-email').addEventListener('keydown', e=>{ if(e.key === 'Enter') $('a-password').focus(); });
+  });
+
+  function pipFor(symbol){
+    const s = symbol.toUpperCase();
+    if(s.includes('JPY')) return 0.01;
+    if(s.startsWith('XAU')) return 0.1;
+    if(s.startsWith('BTC')) return 1.0;
+    return 0.0001;
+  }
+
+  async function runTest(){
+    const symbol = $('f-symbol').value.trim().toUpperCase();
+    const payload = {
+      symbol,
+      dt_from: $('f-from').value,
+      dt_to: $('f-to').value,
+      deposit: +$('f-deposit').value,
+      direction: $('f-direction').value,
+      grid_step_pips: +$('f-grid-step').value,
+      lot_multiplier: +$('f-lot-mult').value,
+      initial_lot: +$('f-initial-lot').value,
+      take_profit_usd: +$('f-tp').value,
+      max_layers: +$('f-max-layers').value,
+      commission_per_lot: +$('f-commission').value,
+      slippage_price: +$('f-slippage').value * pipFor(symbol),
+    };
+    const btn = $('run-btn'), status = $('run-status');
+    btn.disabled = true;
+    status.textContent = 'submitting test…';
+    try{
+      const res = await fetch(`${API}/tests`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      if(res.status === 401){ showAuth(); throw new Error('signed out — sign in and try again'); }
+      if(!res.ok) throw new Error((await res.json()).detail || res.statusText);
+      const {id} = await res.json();
+      let t;
+      for(;;){
+        await sleep(1500);
+        t = await (await fetch(`${API}/tests/${id}`)).json();
+        if(t.status === 'complete' || t.status === 'failed') break;
+        status.textContent = `test ${id} · ${t.status}…`;
+      }
+      if(t.status === 'failed'){
+        status.textContent = `test ${id} failed: ${(t.result && t.result.error) || 'unknown error'}`;
+        return;
+      }
+      renderResult(t);
+      lastTestId = id;
+      status.textContent = `test ${id} complete · ${t.result.ticks_processed.toLocaleString()} ticks processed`;
+      document.getElementById('results').scrollIntoView({behavior:'smooth', block:'nearest'});
+    }catch(e){
+      status.textContent = `error: ${e.message} — is the backend running on port 8000?`;
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  function renderResult(t){
+    const r = t.result, p = t.params;
+    $('results-label').textContent = `Grid EA · ${p.symbol} · ${p.dt_from} → ${p.dt_to} · ${p.direction} · deposit $${p.deposit.toLocaleString()}`;
+    const cls = v => v >= 0 ? 'pos' : 'neg';
+    const sign = v => v >= 0 ? '+' : '−';
+    const row = document.createElement('tr');
+    if(r.net_profit > 0) row.className = 'best';
+    row.innerHTML = `<td><input type="checkbox" class="row-check" checked></td>
+      <td>${t.id}</td>
+      <td class="${cls(r.net_profit)}">${sign(r.net_profit)}$${Math.abs(r.net_profit).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+      <td class="${cls(r.return_pct)}">${sign(r.return_pct)}${Math.abs(r.return_pct)}%</td>
+      <td>${r.profit_factor}</td><td class="neg">${r.max_drawdown_pct}%</td>
+      <td>${r.sharpe}</td><td>${r.trades}</td><td>${r.win_pct}%</td>
+      <td>${r.ticks_processed.toLocaleString()}</td>`;
+    $('results-tbody').prepend(row);
+
+    const eq = t.equity || [];
+    if(eq.length > 1){
+      let min = Infinity, max = -Infinity;
+      for(const [,v] of eq){ if(v < min) min = v; if(v > max) max = v; }
+      const span = (max - min) || 1;
+      const pts = eq.map(([,v], i) =>
+        `${(i/(eq.length-1)*600).toFixed(1)},${(114 - (v-min)/span*108).toFixed(1)}`).join(' ');
+      $('equity-line').setAttribute('points', pts);
+      $('equity-title').textContent = `Equity curve — ${p.symbol} (test ${t.id})`;
+      $('equity-range').textContent = `$${min.toFixed(0)} – $${max.toFixed(0)}`;
+      $('equity-wrap').classList.remove('hidden');
+    }
+
+    const bar = $('verdict-bar');
+    bar.classList.remove('hidden');
+    let icon = '✓', text;
+    if(r.net_profit <= 0){
+      icon = '✕';
+      text = `<b>Verdict: not viable as configured.</b> Lost $${Math.abs(r.net_profit).toLocaleString()} on this window with ${r.max_drawdown_pct}% max drawdown. Rework the grid parameters before considering a live run.`;
+    } else if(r.max_drawdown_pct > 30 || r.open_layers_at_end >= p.max_layers){
+      icon = '!';
+      text = `<b>Verdict: profitable but fragile.</b> +${r.return_pct}% return, but ${r.max_drawdown_pct}% max drawdown${r.open_layers_at_end >= p.max_layers ? ' and the grid was fully layered at the end of the window' : ''} — heavy for a grid strategy. Size down or cap layers before going further.`;
+    } else {
+      text = `<b>Verdict: worth a second window.</b> +${r.return_pct}% with ${r.max_drawdown_pct}% max drawdown over ${r.trades} trades (win rate ${r.win_pct}%). Grid strategies flatter easily — re-test on a different period and on real ticks before drawing conclusions.`;
+    }
+    $('verdict-icon').textContent = icon;
+    $('verdict-text').innerHTML = text;
+  }
+
+  async function pullTicks(kind){
+    const body = JSON.stringify({
+      symbol: $('t-symbol').value.trim().toUpperCase(),
+      dt_from: $('t-from').value,
+      dt_to: $('t-to').value,
+    });
+    const status = $('t-status');
+    $('t-download-btn').disabled = $('t-generate-btn').disabled = true;
+    status.textContent = kind === 'download'
+      ? 'starting Dukascopy download — one file per market hour, this can take a few minutes…'
+      : 'generating synthetic ticks…';
+    try{
+      const res = await fetch(`${API}/ticks/${kind}`, {method:'POST', headers:{'Content-Type':'application/json'}, body});
+      if(res.status === 401){ showAuth(); throw new Error('signed out — sign in and try again'); }
+      let j = await res.json();
+      if(!res.ok) throw new Error(j.detail || res.statusText);
+      if(kind === 'download'){
+        // background job — poll for progress
+        while(j.status === 'queued' || j.status === 'running'){
+          await sleep(2000);
+          j = await (await fetch(`${API}/ticks/download/${j.id}`)).json();
+          status.textContent = `downloading ${j.symbol} from Dukascopy… ${j.ticks.toLocaleString()} ticks stored so far`;
+        }
+        if(j.status === 'failed') throw new Error(j.error || 'download failed');
+        status.textContent = `done — ${j.ticks.toLocaleString()} real ticks stored for ${j.symbol}`;
+      } else {
+        status.textContent = `done — ${j.ticks_generated.toLocaleString()} ${j.source} ticks stored for ${j.symbol}`;
+      }
+      loadCoverage();
+    }catch(e){
+      status.textContent = `error: ${e.message}`;
+    }finally{
+      $('t-download-btn').disabled = $('t-generate-btn').disabled = false;
+    }
+  }
+
+  async function loadCoverage(){
+    const tb = $('ticks-tbody');
+    try{
+      const rows = await (await fetch(`${API}/ticks/coverage`)).json();
+      tb.innerHTML = rows.length ? '' :
+        '<tr><td colspan="4" style="color:var(--muted);">no tick data yet — download or generate some above</td></tr>';
+      rows.forEach(r=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r.symbol}</td><td>${r.ticks.toLocaleString()}</td><td>${r.from}</td><td>${r.to}</td>`;
+        tb.appendChild(tr);
+      });
+    }catch(e){
+      tb.innerHTML = `<tr><td colspan="4" class="neg">backend unreachable: ${e.message}</td></tr>`;
+    }
+  }
+
+  async function loadHistory(){
+    const tb = $('history-tbody');
+    try{
+      const res = await fetch(`${API}/tests`);
+      if(res.status === 401){ showAuth(); tb.innerHTML = ''; return; }
+      const tests = await res.json();
+      tb.innerHTML = tests.length ? '' :
+        '<tr><td colspan="5" style="color:var(--muted);">no tests yet</td></tr>';
+      tests.forEach(t=>{
+        const r = t.result || {}, p = t.params || {};
+        const hasRet = typeof r.return_pct === 'number';
+        const badge = t.status === 'complete' ? 'badge-good' : 'badge-warn';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${(t.created_at||'').slice(0,16)}</td><td>${t.id}</td>
+          <td>${p.symbol || '?'} · ${p.dt_from || ''} → ${p.dt_to || ''}</td>
+          <td class="${hasRet && r.return_pct >= 0 ? 'pos' : 'neg'}">${hasRet ? (r.return_pct>=0?'+':'')+r.return_pct+'%' : '—'}</td>
+          <td><span class="badge ${badge}"><span class="dot"></span>${t.status}</span></td>`;
+        tb.appendChild(tr);
+      });
+    }catch(e){
+      tb.innerHTML = `<tr><td colspan="5" class="neg">backend unreachable: ${e.message}</td></tr>`;
+    }
+  }
+
+  // ---- AI analysis (live — Claude via the backend) ----
+  let lastTestId = null;
+
+  function esc(s){ const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+  async function analyzeLastTest(){
+    if(!lastTestId){ $('ai-findings').innerHTML = '<div class="finding-row"><div class="finding-text">Run a backtest first.</div></div>'; return; }
+    const btn = $('ai-analyze-btn');
+    btn.disabled = true; btn.textContent = '✦ analyzing…';
+    try{
+      const res = await fetch(`${API}/tests/${lastTestId}/analyze`, {method:'POST'});
+      const j = await res.json();
+      if(!res.ok) throw new Error(j.detail || res.statusText);
+      const risk = Math.max(0, Math.min(100, j.overfit_risk));
+      const color = risk < 40 ? 'var(--good)' : risk < 70 ? 'var(--warn)' : 'var(--bad)';
+      $('ai-ring').style.background = `conic-gradient(${color} 0deg ${risk*3.6}deg, rgba(255,255,255,0.06) ${risk*3.6}deg 360deg)`;
+      $('ai-risk').textContent = risk;
+      $('ai-risk').style.color = color;
+      $('ai-risk-sub').textContent = (risk < 40 ? 'low' : risk < 70 ? 'elevated' : 'high') + ' · 0–100 scale';
+      const icons = {ok:['ok','✓'], warn:['warn','!'], bad:['bad','✕']};
+      $('ai-findings').innerHTML = (j.findings || []).map(f=>{
+        const [cls, ch] = icons[f.level] || icons.warn;
+        return `<div class="finding-row"><div class="finding-icon ${cls}">${ch}</div><div class="finding-text"><b>${esc(f.title)}.</b> ${esc(f.text)}</div></div>`;
+      }).join('') + `<div class="finding-row"><div class="finding-icon ok">✦</div><div class="finding-text"><b>Verdict.</b> ${esc(j.verdict)}</div></div>`;
+    }catch(e){
+      $('ai-findings').innerHTML = `<div class="finding-row"><div class="finding-icon bad">✕</div><div class="finding-text">${esc(e.message)}</div></div>`;
+    }finally{
+      btn.disabled = false; btn.textContent = '✦ Analyze last test';
+    }
+  }
+
+  function addChatMsg(who, html){
+    const row = document.createElement('div');
+    row.className = 'chat-msg';
+    row.innerHTML = `<div class="chat-avatar ${who}">${who === 'ai' ? '✦' : 'D'}</div><div class="chat-bubble">${html}</div>`;
+    $('ai-chat').insertBefore(row, document.querySelector('#ai-chat .chat-input-row'));
+    return row;
+  }
+
+  async function askAI(){
+    const q = $('ai-question').value.trim();
+    if(!q) return;
+    if(!lastTestId){ addChatMsg('ai', 'Run a backtest first — I answer questions about a specific run.'); return; }
+    $('ai-question').value = '';
+    addChatMsg('user', esc(q));
+    const pending = addChatMsg('ai', 'thinking…');
+    $('ai-ask-btn').disabled = true;
+    try{
+      const res = await fetch(`${API}/tests/${lastTestId}/ask`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question: q})});
+      const j = await res.json();
+      if(!res.ok) throw new Error(j.detail || res.statusText);
+      pending.querySelector('.chat-bubble').innerHTML = esc(j.answer).replace(/\n/g, '<br>');
+    }catch(e){
+      pending.querySelector('.chat-bubble').innerHTML = `<span class="neg">${esc(e.message)}</span>`;
+    }finally{
+      $('ai-ask-btn').disabled = false;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    $('ai-question').addEventListener('keydown', e=>{ if(e.key === 'Enter') askAI(); });
+  });
+
+  // ---- EA files + native MT5 tests ----
+
+  async function loadEAFiles(){
+    try{
+      const res = await fetch(`${API}/native/files`);
+      if(res.status === 401) return;
+      const files = await res.json();
+      $('ea-file-list').innerHTML = files.map(f=>{
+        const isSet = f.kind === 'set';
+        return `<div class="file-row"><div class="tag ${isSet ? 'tag-set' : 'tag-ea'}">${isSet ? 'SET' : 'EA'}</div>
+          <div class="name">${esc(f.name)}</div><div class="meta">${(f.size/1024).toFixed(0)} KB</div></div>`;
+      }).join('');
+      const eas = files.filter(f=>f.kind === 'ea'), sets = files.filter(f=>f.kind === 'set');
+      $('n-ea-select').innerHTML = eas.length
+        ? eas.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')
+        : '<option value="">upload an EA first</option>';
+      $('n-set-select').innerHTML = '<option value="">none</option>' +
+        sets.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');
+    }catch(e){ /* not signed in yet */ }
+  }
+
+  async function uploadEAFiles(fileList){
+    for(const f of fileList){
+      $('native-status').textContent = `uploading ${f.name}…`;
+      const buf = await f.arrayBuffer();
+      let bin = ''; const bytes = new Uint8Array(buf);
+      for(let i = 0; i < bytes.length; i += 0x8000)
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      const res = await fetch(`${API}/native/files`, {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name: f.name, data_b64: btoa(bin)})});
+      const j = await res.json();
+      if(!res.ok){ $('native-status').textContent = `${f.name}: ${j.detail || 'upload failed'}`; return; }
+    }
+    $('native-status').textContent = `${fileList.length} file(s) uploaded`;
+    loadEAFiles();
+  }
+
+  async function runNativeTest(){
+    const ea = $('n-ea-select').value;
+    if(!ea){ $('native-status').textContent = 'upload and select an EA first'; return; }
+    const payload = {
+      ea_file_id: ea,
+      set_file_id: $('n-set-select').value || null,
+      symbol: $('f-symbol').value.trim().toUpperCase(),
+      timeframe: $('n-tf').value,
+      dt_from: $('f-from').value, dt_to: $('f-to').value,
+      deposit: +$('f-deposit').value,
+    };
+    const btn = $('run-native-btn');
+    btn.disabled = true;
+    try{
+      const res = await fetch(`${API}/native/tests`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      const j = await res.json();
+      if(!res.ok) throw new Error(j.detail || res.statusText);
+      $('native-status').textContent = `native test ${j.id} queued — waiting for the MT5 bridge…`;
+      let t;
+      for(;;){
+        await sleep(4000);
+        t = await (await fetch(`${API}/native/tests/${j.id}`)).json();
+        if(t.status === 'complete' || t.status === 'failed') break;
+        $('native-status').textContent = `native test ${j.id} · ${t.status}…`;
+      }
+      if(t.status === 'failed'){ $('native-status').textContent = `native test failed: ${t.error || 'unknown error'}`; return; }
+      renderNativeResult(t);
+      $('native-status').textContent = `native test ${t.id} complete (MT5 Strategy Tester)`;
+    }catch(e){
+      $('native-status').textContent = 'error: ' + e.message;
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  function renderNativeResult(t){
+    const r = t.result, p = t.params;
+    const cls = v => v >= 0 ? 'pos' : 'neg';
+    const sign = v => v >= 0 ? '+' : '−';
+    const fmt = v => v == null ? '—' : v;
+    const row = document.createElement('tr');
+    if(r.net_profit > 0) row.className = 'best';
+    row.innerHTML = `<td><input type="checkbox" class="row-check" checked></td>
+      <td>${t.id} <span class="badge badge-good" style="margin-left:4px;"><span class="dot"></span>MT5</span></td>
+      <td class="${cls(r.net_profit)}">${sign(r.net_profit)}$${Math.abs(r.net_profit).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+      <td class="${cls(r.return_pct)}">${sign(r.return_pct)}${Math.abs(r.return_pct)}%</td>
+      <td>${fmt(r.profit_factor)}</td><td class="neg">${fmt(r.max_drawdown_pct)}%</td>
+      <td>${fmt(r.sharpe)}</td><td>${r.trades}</td><td>${fmt(r.win_pct)}%</td>
+      <td>native</td>`;
+    $('results-tbody').prepend(row);
+    $('results-label').textContent = `${p.ea_name} · ${p.symbol} ${p.timeframe} · ${p.dt_from} → ${p.dt_to} · MT5 Strategy Tester`;
+    document.getElementById('results').scrollIntoView({behavior:'smooth', block:'nearest'});
+  }
+
+  async function loadBridgeStatus(){
+    try{
+      const res = await fetch(`${API}/native/bridge/status`);
+      if(!res.ok) return;
+      const s = await res.json();
+      const el = $('bridge-status');
+      if(!s.configured){ el.innerHTML = 'bridge: <span class="neg">not configured</span>'; }
+      else if(s.online){ el.innerHTML = 'bridge: <span class="pos">● online</span>'; }
+      else { el.innerHTML = 'bridge: <span class="neg">○ offline</span>'; }
+    }catch(e){}
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const dz = $('dropzone');
+    dz.addEventListener('dragover', e=>{ e.preventDefault(); dz.style.borderColor = 'var(--accent-border)'; });
+    dz.addEventListener('dragleave', ()=>{ dz.style.borderColor = ''; });
+    dz.addEventListener('drop', e=>{
+      e.preventDefault(); dz.style.borderColor = '';
+      uploadEAFiles([...e.dataTransfer.files]);
+    });
+    $('ea-file-input').addEventListener('change', e=> uploadEAFiles([...e.target.files]));
+    loadBridgeStatus();
+    setInterval(loadBridgeStatus, 30000);
+    setTimeout(loadEAFiles, 800);   // after auth check settles
+  });
+
+  // ---- journal ----
+  let calCursor = new Date();
+  let calData = {};
+
+  async function loadJournal(){
+    try{
+      const [stats, daily, trades, tests] = await Promise.all([
+        fetch(`${API}/journal/stats`).then(r=>r.json()),
+        fetch(`${API}/journal/calendar`).then(r=>r.json()),
+        fetch(`${API}/journal/trades`).then(r=>r.json()),
+        fetch(`${API}/tests`).then(r=>r.status === 401 ? [] : r.json()),
+      ]);
+      if(stats.detail){ showAuth(); return; }
+      const cls = v => v >= 0 ? 'pos' : 'neg';
+      $('j-net').innerHTML = `<span class="${cls(stats.net_pnl)}">${stats.net_pnl >= 0 ? '+' : '−'}$${Math.abs(stats.net_pnl).toLocaleString()}</span>`;
+      $('j-winpf').textContent = `${stats.win_pct}% · PF ${stats.profit_factor}`;
+      $('j-counts').textContent = `${stats.trades} · $${stats.avg_win} / $${stats.avg_loss}`;
+      calData = {};
+      daily.forEach(d => calData[d.date] = d);
+      renderCalendar();
+      const tb = $('j-trades-tbody');
+      tb.innerHTML = trades.length ? '' : '<tr><td colspan="8" style="color:var(--muted);">no trades yet — import some below</td></tr>';
+      trades.forEach(t=>{
+        const tr = document.createElement('tr');
+        const pnl = t.profit + t.commission + t.swap;
+        tr.innerHTML = `<td>${(t.close_time || '').slice(0,16)}</td><td>${esc(t.symbol)}</td><td>${esc(t.side)}</td><td>${t.volume ?? ''}</td>
+          <td>${t.open_price ?? ''}</td><td>${t.close_price ?? ''}</td>
+          <td class="${cls(pnl)}">${pnl >= 0 ? '+' : '−'}$${Math.abs(pnl).toFixed(2)}</td><td>${esc(t.source)}</td>`;
+        tb.appendChild(tr);
+      });
+      const sel = $('j-test-select');
+      const complete = tests.filter(t => t.status === 'complete');
+      sel.innerHTML = complete.length
+        ? complete.map(t=>`<option value="${t.id}">${t.id} — ${t.params.symbol} ${t.params.dt_from} → ${t.params.dt_to} (${t.result ? t.result.return_pct + '%' : ''})</option>`).join('')
+        : '<option value="">no completed tests</option>';
+    }catch(e){
+      $('j-import-status').textContent = 'error loading journal: ' + e.message;
+    }
+  }
+
+  function renderCalendar(){
+    const y = calCursor.getFullYear(), m = calCursor.getMonth();
+    $('cal-label').textContent = calCursor.toLocaleString('en', {month:'long', year:'numeric'});
+    const grid = $('cal-grid');
+    grid.innerHTML = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+      .map(d=>`<div style="text-align:center; font-size:10px; color:var(--muted-2); text-transform:uppercase; padding:4px;">${d}</div>`).join('');
+    const first = new Date(y, m, 1);
+    const offset = (first.getDay() + 6) % 7;
+    const days = new Date(y, m + 1, 0).getDate();
+    for(let i = 0; i < offset; i++) grid.insertAdjacentHTML('beforeend', '<div></div>');
+    for(let d = 1; d <= days; d++){
+      const key = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const e = calData[key];
+      let bg = 'rgba(255,255,255,0.02)', txt = '';
+      if(e){
+        bg = e.pnl >= 0 ? 'var(--good-soft)' : 'var(--bad-soft)';
+        txt = `<div class="${e.pnl >= 0 ? 'pos' : 'neg'}" style="font-family:var(--mono); font-size:11px; font-weight:600;">${e.pnl >= 0 ? '+' : '−'}$${Math.abs(e.pnl).toFixed(0)}</div><div style="font-size:9px; color:var(--muted-2);">${e.trades} trades</div>`;
+      }
+      grid.insertAdjacentHTML('beforeend',
+        `<div style="background:${bg}; border-radius:8px; padding:7px 8px; min-height:52px;">
+           <div style="font-size:10px; color:var(--muted-2);">${d}</div>${txt}</div>`);
+    }
+  }
+
+  function calShift(n){ calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() + n, 1); renderCalendar(); }
+
+  async function importFromTest(){
+    const id = $('j-test-select').value;
+    if(!id) return;
+    await doImport(`${API}/journal/import/test/${id}`, {});
+  }
+  async function importFromMT5(){
+    await doImport(`${API}/journal/import/mt5`, {url: $('j-mt5-url').value.trim()});
+  }
+  async function importFromCSV(){
+    const f = $('j-csv-file').files[0];
+    if(!f){ $('j-import-status').textContent = 'choose a CSV file first'; return; }
+    await doImport(`${API}/journal/import/csv`, {csv: await f.text()});
+  }
+  async function doImport(url, body){
+    $('j-import-status').textContent = 'importing…';
+    try{
+      const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      const j = await res.json();
+      if(!res.ok) throw new Error(j.detail || res.statusText);
+      $('j-import-status').textContent = `imported ${j.imported} trades from ${j.source}`;
+      loadJournal();
+    }catch(e){
+      $('j-import-status').textContent = 'import failed: ' + e.message;
+    }
+  }
+
+  // ---- chart replay ----
+  let rBars = [], rTrades = [], rPos = 1, rTimer = null;
+
+  async function loadReplay(){
+    const tf = $('r-tf').value;
+    $('r-status').textContent = 'loading bars…';
+    try{
+      const trades = await (await fetch(`${API}/journal/trades`)).json();
+      rTrades = trades.filter(t => t.symbol === 'XAUUSD' && t.close_time);
+      let from = '2024-01-01', to = '2024-03-01';
+      if(rTrades.length){
+        const times = rTrades.map(t => t.close_time).sort();
+        from = times[0].slice(0,10);
+        to = times[times.length-1].slice(0,10);
+        const pad = d => { const x = new Date(d); return x.toISOString().slice(0,10); };
+        from = pad(new Date(new Date(from) - 3*86400e3));
+        to = pad(new Date(+new Date(to) + 3*86400e3));
+      }
+      rBars = await (await fetch(`${API}/bars?symbol=XAUUSD&tf=${tf}&dt_from=${from}&dt_to=${to}`)).json();
+      if(!rBars.length){ $('r-status').textContent = 'no bars in range — is XAUUSD bar data imported?'; return; }
+      rPos = rBars.length;
+      $('r-scrub').max = rBars.length;
+      $('r-scrub').value = rBars.length;
+      drawReplay();
+      $('r-status').textContent = `${rBars.length.toLocaleString()} ${tf} bars · ${from} → ${to} · ${rTrades.length} trades marked`;
+    }catch(e){
+      $('r-status').textContent = 'error: ' + e.message;
+    }
+  }
+
+  function drawReplay(){
+    const cv = $('r-canvas'), ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    const bars = rBars.slice(0, rPos);
+    if(!bars.length) return;
+    const view = bars.slice(-260);
+    let lo = Infinity, hi = -Infinity;
+    for(const b of view){ if(b[3] < lo) lo = b[3]; if(b[2] > hi) hi = b[2]; }
+    const span = (hi - lo) || 1, W = cv.width, H = cv.height, bw = W / view.length;
+    const yOf = p => H - 8 - (p - lo) / span * (H - 16);
+    view.forEach((b, i)=>{
+      const x = i * bw + bw / 2;
+      const up = b[4] >= b[1];
+      ctx.strokeStyle = ctx.fillStyle = up ? '#2bc98f' : '#e15b6f';
+      ctx.beginPath(); ctx.moveTo(x, yOf(b[2])); ctx.lineTo(x, yOf(b[3])); ctx.stroke();
+      const yo = yOf(b[1]), yc = yOf(b[4]);
+      ctx.fillRect(x - Math.max(1, bw*0.3), Math.min(yo, yc), Math.max(2, bw*0.6), Math.max(1, Math.abs(yc - yo)));
+    });
+    // trade close markers within view
+    const t0 = view[0][0], t1 = view[view.length-1][0];
+    rTrades.forEach(t=>{
+      if(t.close_time >= t0 && t.close_time <= t1){
+        const idx = view.findIndex(b => b[0] >= t.close_time);
+        if(idx < 0) return;
+        const x = idx * bw + bw / 2, y = yOf(t.close_price || view[idx][4]);
+        ctx.fillStyle = (t.profit + t.commission + t.swap) >= 0 ? '#2bc98f' : '#e15b6f';
+        ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.stroke();
+      }
+    });
+    ctx.fillStyle = 'rgba(232,234,240,0.7)';
+    ctx.font = '11px monospace';
+    const last = view[view.length-1];
+    ctx.fillText(`${last[0].slice(0,16)}   O ${last[1]}  H ${last[2]}  L ${last[3]}  C ${last[4]}`, 10, 16);
+  }
+
+  function toggleReplay(){
+    if(rTimer){ clearInterval(rTimer); rTimer = null; $('r-play').textContent = '▶ Replay'; return; }
+    if(!rBars.length) return;
+    if(rPos >= rBars.length) rPos = Math.max(1, Math.min(60, rBars.length));
+    $('r-play').textContent = '❚❚ Pause';
+    rTimer = setInterval(()=>{
+      rPos++;
+      $('r-scrub').value = rPos;
+      drawReplay();
+      if(rPos >= rBars.length){ clearInterval(rTimer); rTimer = null; $('r-play').textContent = '▶ Replay'; }
+    }, 40);
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    $('r-scrub').addEventListener('input', e=>{ rPos = +e.target.value; drawReplay(); });
+  });
+</script>
+</body>
+</html>
