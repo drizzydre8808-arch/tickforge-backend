@@ -874,8 +874,46 @@ async def ticks_csv(symbol: str, request: Request):
     return Response(out.getvalue(),media_type="text/csv")
 
 # ── Bars ──────────────────────────────────────────────────────────────────────
+_TF_SECONDS = {"M1":60,"M5":300,"M15":900,"M30":1800,"H1":3600,"H4":14400,"D1":86400,"W1":604800}
+
 @app.get("/bars")
-async def bars(request: Request): return []
+async def bars(request: Request):
+    get_user(request)
+    sym     = request.query_params.get("symbol","XAUUSD").upper()
+    tf      = request.query_params.get("tf","H1").upper()
+    dt_from = request.query_params.get("dt_from","")
+    dt_to   = request.query_params.get("dt_to","")
+    tf_sec  = _TF_SECONDS.get(tf, 3600)
+    f = TICKS_DIR / f"{sym}.csv"
+    if not f.exists(): return []
+    import datetime as _DT
+    ts_from = _DT.datetime.fromisoformat(dt_from).timestamp() if dt_from else 0
+    ts_to   = _DT.datetime.fromisoformat(dt_to).timestamp()   if dt_to   else 9e12
+    buckets = {}
+    with open(str(f), newline="", encoding="utf-8") as fh:
+        r = csv.reader(fh); next(r, None)
+        for row in r:
+            if len(row) < 4: continue
+            try:
+                ts = _DT.datetime.fromisoformat(row[1]).timestamp()
+            except Exception: continue
+            if ts < ts_from or ts > ts_to: continue
+            bid, ask = float(row[2]), float(row[3])
+            mid = (bid + ask) / 2
+            bucket = int(ts // tf_sec) * tf_sec
+            if bucket not in buckets:
+                buckets[bucket] = [mid, mid, mid, mid]  # O H L C
+            else:
+                b = buckets[bucket]
+                if mid > b[1]: b[1] = mid
+                if mid < b[2]: b[2] = mid
+                b[3] = mid
+    result = []
+    for bucket in sorted(buckets):
+        o,h,l,c = buckets[bucket]
+        ts_str = _DT.datetime.utcfromtimestamp(bucket).isoformat()
+        result.append([ts_str, round(o,5), round(h,5), round(l,5), round(c,5)])
+    return result
 
 # ── Native / Bridge ───────────────────────────────────────────────────────────
 @app.post("/native/files")
