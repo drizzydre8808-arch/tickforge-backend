@@ -1291,7 +1291,6 @@
 
   let _tvChart = null, _tvSeries = null;
   let _nativeTvChart = null, _nativeTvSeries = null;
-  let _tvRO = null, _nativeTvRO = null;
 
   function renderTVChart(equity, trades, title, containerId) {
     containerId = containerId || 'tv-chart';
@@ -1305,16 +1304,14 @@
 
     // Destroy previous chart instance for this slot only
     if(isNative) {
-      if(_nativeTvRO){ _nativeTvRO.disconnect(); _nativeTvRO = null; }
       if(_nativeTvChart){ _nativeTvChart.remove(); _nativeTvChart = null; }
     } else {
-      if(_tvRO){ _tvRO.disconnect(); _tvRO = null; }
       if(_tvChart){ _tvChart.remove(); _tvChart = null; }
     }
 
     const chart = LightweightCharts.createChart(container, {
-      width: container.clientWidth,
-      height: 280,
+      autoSize: true,
+      height: isNative ? 260 : 280,
       layout: { background: { color: '#1e222d' }, textColor: '#787b86' },
       grid: { vertLines: { color: '#2a2e39' }, horzLines: { color: '#2a2e39' } },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
@@ -1354,38 +1351,36 @@
     const seen = new Set();
     const unique = lineData.filter(d => { if(seen.has(d.time)) return false; seen.add(d.time); return true; });
 
-    if(unique.length > 1){
-      series.setData(unique);
-      const vals = unique.map(d => d.value);
-      const mn = Math.min(...vals), mx = Math.max(...vals);
-      if(!isNative && $('equity-range'))
-        $('equity-range').textContent = `$${mn.toLocaleString(undefined,{maximumFractionDigits:0})} – $${mx.toLocaleString(undefined,{maximumFractionDigits:0})}`;
-    }
+    // Defer setData one frame so the container has its real width after unhide
+    requestAnimationFrame(() => {
+      if(unique.length > 1){
+        series.setData(unique);
+        const vals = unique.map(d => d.value);
+        const mn = Math.min(...vals), mx = Math.max(...vals);
+        if(!isNative && $('equity-range'))
+          $('equity-range').textContent = `$${mn.toLocaleString(undefined,{maximumFractionDigits:0})} – $${mx.toLocaleString(undefined,{maximumFractionDigits:0})}`;
+      }
 
-    // Trade markers
-    if(trades && trades.length){
-      const markers = trades.map(tr => {
-        const ts = tr.exit_ts || tr.entry_ts;
-        if(!ts) return null;
-        const t_sec = Math.floor(new Date(ts).getTime() / 1000);
-        if(!isFinite(t_sec)) return null;
-        const profit = tr.pnl ?? tr.profit ?? 0;
-        return { time: t_sec,
-          position: profit >= 0 ? 'aboveBar' : 'belowBar',
-          color: profit >= 0 ? '#26a69a' : '#ef5350',
-          shape: profit >= 0 ? 'arrowUp' : 'arrowDown',
-          text: `${profit >= 0 ? '+' : ''}$${Math.abs(profit).toFixed(0)}`,
-          size: 1 };
-      }).filter(Boolean).sort((a,b) => a.time - b.time);
-      if(markers.length) series.setMarkers(markers);
-    }
+      // Trade markers
+      if(trades && trades.length){
+        const markers = trades.map(tr => {
+          const ts = tr.exit_ts || tr.entry_ts;
+          if(!ts) return null;
+          const t_sec = Math.floor(new Date(ts).getTime() / 1000);
+          if(!isFinite(t_sec)) return null;
+          const profit = tr.pnl ?? tr.profit ?? 0;
+          return { time: t_sec,
+            position: profit >= 0 ? 'aboveBar' : 'belowBar',
+            color: profit >= 0 ? '#26a69a' : '#ef5350',
+            shape: profit >= 0 ? 'arrowUp' : 'arrowDown',
+            text: `${profit >= 0 ? '+' : ''}$${Math.abs(profit).toFixed(0)}`,
+            size: 1 };
+        }).filter(Boolean).sort((a,b) => a.time - b.time);
+        if(markers.length) series.setMarkers(markers);
+      }
 
-    chart.timeScale().fitContent();
-
-    // Responsive resize — disconnect previous observer first
-    const ro = new ResizeObserver(() => chart.applyOptions({ width: container.clientWidth }));
-    ro.observe(container);
-    if(isNative) _nativeTvRO = ro; else _tvRO = ro;
+      chart.timeScale().fitContent();
+    });
   }
 
   function renderResult(t){
