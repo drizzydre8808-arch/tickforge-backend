@@ -629,6 +629,84 @@ async def tick_job(job_id: str, request: Request):
     return {"id":row["id"],"status":row["status"],"symbol":row["symbol"],
             "ticks":row["ticks"],"error":row["error"]}
 
+# ── AllTick ───────────────────────────────────────────────────────────────────
+_ALLTICK_SYM = {
+    "XAUUSD":"XAUUSD.FX","XAGUSD":"XAGUSD.FX","EURUSD":"EURUSD.FX",
+    "GBPUSD":"GBPUSD.FX","USDJPY":"USDJPY.FX","USDCHF":"USDCHF.FX",
+    "AUDUSD":"AUDUSD.FX","USDCAD":"USDCAD.FX","NZDUSD":"NZDUSD.FX",
+    "EURGBP":"EURGBP.FX","EURJPY":"EURJPY.FX","GBPJPY":"GBPJPY.FX",
+    "BTCUSD":"BTC.CC","ETHUSD":"ETH.CC","SOLUSD":"SOL.CC",
+}
+_ALLTICK_SPREAD = {
+    "XAUUSD":0.3,"XAGUSD":0.03,"EURUSD":0.00010,"GBPUSD":0.00015,
+    "USDJPY":0.02,"BTCUSD":10.0,"ETHUSD":1.0,"DEFAULT":0.0002,
+}
+
+def _run_alltick(jid, symbol, dt_from, dt_to, token, kline_type):
+    import json as _json, urllib.request as _ur, urllib.parse as _up, datetime as _dt
+    at_sym = _ALLTICK_SYM.get(symbol, symbol+".FX")
+    spread = _ALLTICK_SPREAD.get(symbol, _ALLTICK_SPREAD["DEFAULT"])
+    ts_from = int(_dt.datetime.fromisoformat(dt_from).replace(tzinfo=_dt.timezone.utc).timestamp()*1000)
+    ts_to   = int(_dt.datetime.fromisoformat(dt_to).replace(tzinfo=_dt.timezone.utc).timestamp()*1000)
+    candles = []
+    end_ts  = ts_to
+    try:
+        while end_ts > ts_from and len(candles) < 50000:
+            q = _json.dumps({"symbol":at_sym,"kline_type":kline_type,"kline_timestamp_end":end_ts,"query_kline_num":1000,"adjust_type":0})
+            url = f"https://quote.tradeswitcher.com/quote-b-api/kline?token={token}&query={_up.quote(q)}"
+            req = _ur.Request(url, headers={"Content-Type":"application/json"})
+            with _ur.urlopen(req, timeout=30) as resp:
+                data = _json.loads(resp.read())
+            if data.get("ret") != 200:
+                raise Exception(f"AllTick API error: {data.get('msg','unknown')}")
+            items = data.get("data",{}).get("items",[])
+            if not items: break
+            chunk = [c for c in items if c[0] >= ts_from]
+            candles.extend(chunk)
+            earliest = min(c[0] for c in items)
+            if earliest <= ts_from: break
+            end_ts = earliest - 1
+        candles.sort(key=lambda c:c[0])
+        ticks=[]
+        for c in candles:
+            ts_ms,o,h,l,cl = c[0],c[1],c[2],c[3],c[4]
+            base = _dt.datetime.utcfromtimestamp(ts_ms/1000)
+            def t(secs,p): return (base+_dt.timedelta(seconds=secs)).isoformat()
+            ticks.append((symbol, t(0,o),  round(o,5),  round(o+spread,5)))
+            if o <= cl:
+                ticks.append((symbol, t(15,l), round(l,5), round(l+spread,5)))
+                ticks.append((symbol, t(30,h), round(h,5), round(h+spread,5)))
+            else:
+                ticks.append((symbol, t(15,h), round(h,5), round(h+spread,5)))
+                ticks.append((symbol, t(30,l), round(l,5), round(l+spread,5)))
+            ticks.append((symbol, t(45,cl), round(cl,5), round(cl+spread,5)))
+        with _db_lock:
+            conn=get_db()
+            conn.execute("DELETE FROM ticks WHERE symbol=?",(symbol,))
+            conn.executemany("INSERT INTO ticks VALUES (?,?,?,?)", ticks)
+            conn.execute("UPDATE tick_jobs SET status='complete',ticks=?,updated_at=? WHERE id=?",(len(ticks),now(),jid))
+            conn.commit(); conn.close()
+    except Exception as e:
+        with _db_lock:
+            conn=get_db(); conn.execute("UPDATE tick_jobs SET status='failed',error=?,updated_at=? WHERE id=?",(str(e),now(),jid)); conn.commit(); conn.close()
+
+@app.post("/ticks/alltick")
+async def download_alltick(request: Request, background_tasks: BackgroundTasks):
+    uid=get_user(request); body=await request.json()
+    symbol     = body.get("symbol","XAUUSD").upper()
+    dt_from    = body.get("dt_from","2024-01-01")
+    dt_to      = body.get("dt_to", now()[:10])
+    token      = body.get("token","")
+    kline_type = int(body.get("kline_type",5))
+    if not token: raise HTTPException(400,"AllTick API token required")
+    jid=str(uuid.uuid4())[:8]
+    with _db_lock:
+        conn=get_db()
+        conn.execute("INSERT INTO tick_jobs VALUES (?,?,?,?,?,?,?,?)",(jid,uid,symbol,"running",0,None,now(),now()))
+        conn.commit(); conn.close()
+    background_tasks.add_task(_run_alltick, jid, symbol, dt_from, dt_to, token, kline_type)
+    return {"id":jid,"status":"running","symbol":symbol,"ticks":0}
+
 @app.get("/ticks/csv/{symbol}")
 async def ticks_csv(symbol: str, request: Request):
     uid=get_user_opt(request); bt=request.headers.get("X-Bridge-Token","")

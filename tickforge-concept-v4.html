@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TickForge — Backtest Suite</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <style>
   /* =====================================================
@@ -362,28 +363,32 @@
   </div>
   <nav>
     <button class="active" data-page="new">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M8 2a6 6 0 100 12A6 6 0 008 2zm.75 8.75h-1.5v-4.5h1.5v4.5zm0-6h-1.5V3.25h1.5V4.75z"/></svg>
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M2 2h12v1H2V2zm0 3h8v1H2V5zm0 3h12v1H2V8zm0 3h6v1H2v-1z"/></svg>
       Backtest
+    </button>
+    <button data-page="native">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1zm1 2v8h8V4H4zm2 1h4v1H6V5zm0 2h4v1H6V7zm0 2h2v1H6V9z"/></svg>
+      Native MT5
+    </button>
+    <button data-page="data">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M1 12l3-5 3 3 3-6 3 4 2-3v8H1v-1z"/></svg>
+      Data
     </button>
     <button data-page="replay">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M5 3.5l8 4.5-8 4.5V3.5z"/></svg>
-      Replay
+      Chart Replay
     </button>
     <button data-page="journal">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M2 3h12v2H2V3zm0 4h8v2H2V7zm0 4h10v2H2v-2z"/></svg>
       Journal
     </button>
+    <button data-page="history">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.5 7.21V4H7v5l3.26 1.95.74-1.23L8.5 8.21z"/></svg>
+      Run History
+    </button>
     <button data-page="leaderboard">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M2 10h3v4H2v-4zm4-4h3v8H6V6zm4-4h3v12h-3V2z"/></svg>
       Rankings
-    </button>
-    <button data-page="history">
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.5 7.21V4H7v5l3.26 1.95.74-1.23L8.5 8.21z"/></svg>
-      History
-    </button>
-    <button data-page="ticks">
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M1 12l3-5 3 3 3-6 3 4 2-3v8H1v-1z"/></svg>
-      Tick Data
     </button>
   </nav>
   <div class="user-chip hidden" id="user-chip">
@@ -426,35 +431,9 @@
 
   <!-- NEW TEST PAGE -->
   <div id="page-new">
-    <div class="grid-2">
-      <div class="panel">
+    <div class="panel">
         <div class="panel-head">
-          <div class="panel-head-left"><div class="step-num">1</div><div class="panel-title">Your files — native MT5 tests</div></div>
-          <div class="panel-sub" id="bridge-status">bridge: checking…</div>
-        </div>
-        <div class="dropzone" id="dropzone" onclick="document.getElementById('ea-file-input').click()">
-          <div class="icon">⇧</div>
-          Drag your <b style="color:var(--text)">EA (.ex5 / .mq5)</b> and <b style="color:var(--text)">settings (.set)</b> here
-          <div class="hint">or click to browse — runs in MT5's own Strategy Tester via the Windows bridge</div>
-        </div>
-        <input type="file" id="ea-file-input" multiple accept=".ex5,.mq5,.set,.algo" style="display:none;">
-        <div id="ea-file-list"></div>
-        <div class="field-group">
-          <div class="row-2">
-            <div><label>Expert Advisor</label><select id="n-ea-select"><option value="">upload an EA first</option></select></div>
-            <div><label>Settings (.set)</label><select id="n-set-select"><option value="">none</option></select></div>
-          </div>
-          <div class="row-2">
-            <div><label>Tester timeframe</label><select id="n-tf"><option>M1</option><option>M5</option><option>M15</option><option>M30</option><option selected>H1</option><option>H4</option><option>D1</option></select></div>
-            <div><label>&nbsp;</label><button class="btn btn-secondary btn-block" id="run-native-btn" onclick="runNativeTest()">Run native MT5 test</button></div>
-          </div>
-        </div>
-        <div class="run-note" id="native-status" style="text-align:left;"></div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <div class="panel-head-left"><div class="step-num">2</div><div class="panel-title">What to test</div></div>
+          <div class="panel-head-left"><div class="step-num">1</div><div class="panel-title">What to test</div></div>
         </div>
         <div class="field-group">
           <label>Pair / symbol</label>
@@ -478,12 +457,11 @@
           </div>
         </div>
       </div>
-    </div>
 
     <!-- EXECUTION & COST MODEL -->
     <div class="panel">
       <div class="panel-head">
-        <div class="panel-head-left"><div class="step-num">3</div><div class="panel-title">Execution &amp; cost model</div></div>
+        <div class="panel-head-left"><div class="step-num">2</div><div class="panel-title">Execution &amp; cost model</div></div>
         <div class="panel-sub">realism settings</div>
       </div>
       <div class="grid-3">
@@ -511,7 +489,7 @@
     <!-- SESSION & NEWS FILTERS -->
     <div class="panel">
       <div class="panel-head">
-        <div class="panel-head-left"><div class="step-num">4</div><div class="panel-title">Session &amp; news filters</div></div>
+        <div class="panel-head-left"><div class="step-num">3</div><div class="panel-title">Session &amp; news filters</div></div>
         <div class="panel-sub">optional</div>
       </div>
       <div class="grid-3">
@@ -528,7 +506,7 @@
     <!-- OPTIMIZATION / VALIDATION TOOLS -->
     <div class="panel">
       <div class="panel-head">
-        <div class="panel-head-left"><div class="step-num">5</div><div class="panel-title">Optimization &amp; validation</div></div>
+        <div class="panel-head-left"><div class="step-num">4</div><div class="panel-title">Optimization &amp; validation</div></div>
         <div class="toggle-link" onclick="toggleAdv()">show options ▾</div>
       </div>
       <div class="chip-row">
@@ -566,13 +544,13 @@
         <button class="btn btn-secondary" title="Save this configuration">Save as template</button>
         <button class="btn btn-secondary" title="Queue without running now">Add to queue</button>
       </div>
-      <div class="run-note" id="run-status">runs against tick data stored locally — check the Tick Data page for coverage</div>
+      <div class="run-note" id="run-status">runs against tick data stored locally — check the <b>Data</b> tab for coverage</div>
     </div>
 
     <!-- RESULTS -->
     <div class="panel" id="results">
       <div class="toolbar">
-        <div class="panel-head-left"><div class="step-num">6</div><div class="panel-title">Results</div></div>
+        <div class="panel-head-left"><div class="step-num">5</div><div class="panel-title">Results</div></div>
         <div class="btn-row">
           <button class="btn btn-ghost">⇩ Export CSV</button>
           <button class="btn btn-ghost">⇩ Export PDF report</button>
@@ -590,9 +568,7 @@
 
       <div class="chart-wrap hidden" id="equity-wrap">
         <div class="chart-head"><span id="equity-title">Equity curve</span><span id="equity-range"></span></div>
-        <svg viewBox="0 0 600 120" width="100%" height="120" preserveAspectRatio="none">
-          <polyline fill="none" stroke="#2bc98f" stroke-width="1.6" id="equity-line" points="" />
-        </svg>
+        <div id="tv-chart" style="width:100%;height:280px;"></div>
       </div>
 
       <div class="verdict-bar hidden" id="verdict-bar">
@@ -613,7 +589,7 @@
     <div class="panel ai-panel">
       <div class="panel-head">
         <div class="panel-head-left">
-          <div class="step-num">7</div>
+          <div class="step-num">6</div>
           <div class="panel-title">AI analysis</div>
         </div>
         <button class="btn btn-secondary" id="ai-analyze-btn" onclick="analyzeLastTest()">✦ Analyze last test</button>
@@ -636,6 +612,78 @@
           <input type="text" id="ai-question" placeholder="Ask about this result — e.g. 'is this overfit?'">
           <button class="btn btn-primary" id="ai-ask-btn" onclick="askAI()">Ask</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NATIVE MT5 PAGE -->
+  <div id="page-native" class="hidden">
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-head-left"><div class="step-num">1</div><div class="panel-title">EA file</div></div>
+          <div class="panel-sub" id="bridge-status">bridge: checking…</div>
+        </div>
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('ea-file-input').click()">
+          <div class="icon">⇧</div>
+          Drag your <b style="color:var(--text)">EA (.ex5)</b> and <b style="color:var(--text)">settings (.set)</b> here
+          <div class="hint">or click to browse — runs through MT5 Strategy Tester on the Windows bridge</div>
+        </div>
+        <input type="file" id="ea-file-input" multiple accept=".ex5,.mq5,.set,.algo" style="display:none;">
+        <div id="ea-file-list"></div>
+        <div class="field-group" style="margin-top:12px;">
+          <div class="row-2">
+            <div><label>Expert Advisor</label><select id="n-ea-select"><option value="">upload an EA first</option></select></div>
+            <div><label>Settings (.set)</label><select id="n-set-select"><option value="">none</option></select></div>
+          </div>
+          <div class="row-2" style="margin-top:10px;">
+            <div><label>Tester timeframe</label><select id="n-tf"><option>M1</option><option>M5</option><option>M15</option><option>M30</option><option selected>H1</option><option>H4</option><option>D1</option></select></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-head-left"><div class="step-num">2</div><div class="panel-title">Test parameters</div></div>
+        </div>
+        <div class="field-group">
+          <label>Symbol</label>
+          <input type="text" id="n-symbol" value="XAUUSD">
+          <div class="row-2">
+            <div><label>From</label><input type="date" id="n-from" value="2024-01-01"></div>
+            <div><label>To</label><input type="date" id="n-to" value="2024-12-31"></div>
+          </div>
+          <div class="row-2">
+            <div><label>Deposit</label><input type="number" id="n-deposit" value="10000"></div>
+            <div><label>&nbsp;</label><button class="btn btn-primary btn-block" id="run-native-btn" onclick="runNativeTest()" style="margin-top:0;">Run MT5 backtest</button></div>
+          </div>
+        </div>
+        <div class="run-note" id="native-status" style="text-align:left; margin-top:10px;"></div>
+      </div>
+    </div>
+
+    <!-- NATIVE RESULTS -->
+    <div class="panel" id="native-results-panel" style="margin-top:0;">
+      <div class="panel-head">
+        <div class="panel-head-left"><div class="step-num">3</div><div class="panel-title">MT5 Results</div></div>
+      </div>
+      <div class="toolbar-left" style="margin-bottom:12px;" id="native-results-label">no native test run yet — upload an EA and hit Run MT5 backtest</div>
+      <table>
+        <thead><tr>
+          <th>ID</th><th>EA</th><th>Symbol</th><th>Net Profit</th><th>Return</th><th>PF</th><th>Max DD</th><th>Trades</th><th>Win%</th>
+        </tr></thead>
+        <tbody id="native-results-tbody"></tbody>
+      </table>
+      <div class="chart-wrap hidden" id="native-equity-wrap" style="margin-top:14px;">
+        <div class="chart-head"><span id="native-equity-title">Equity curve</span></div>
+        <div id="native-tv-chart" style="width:100%;height:260px;"></div>
+      </div>
+      <div class="hidden" id="native-trades-panel" style="margin-top:16px;">
+        <div class="panel-head-left" style="margin-bottom:8px;"><div class="panel-title">Deals — MT5 Strategy Tester</div></div>
+        <table>
+          <thead><tr><th>Time</th><th>Symbol</th><th>Type</th><th>Volume</th><th>Price</th><th>Profit</th><th>Balance</th></tr></thead>
+          <tbody id="native-trades-tbody"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -917,24 +965,72 @@
   </div>
 
   <!-- TICK DATA -->
-  <div id="page-ticks" class="hidden">
+  <div id="page-data" class="hidden">
     <div class="panel">
-      <div class="panel-head"><div class="panel-head-left"><div class="panel-title">Tick data</div></div></div>
-      <div class="toolbar-left" style="margin-bottom:16px;">Real ticks download from Dukascopy's free historical feed (hourly files — long ranges take a while; pull in chunks). Synthetic is instant, for pipeline testing. Cached — re-testing a period you already have is instant.</div>
-      <div class="row-3" style="margin-bottom:14px;">
-        <div><label style="margin-top:0;">Symbol</label><input type="text" id="t-symbol" value="XAUUSD"></div>
-        <div><label style="margin-top:0;">From</label><input type="date" id="t-from" value="2024-01-01"></div>
-        <div><label style="margin-top:0;">To</label><input type="date" id="t-to" value="2024-01-08"></div>
+      <div class="panel-head">
+        <div class="panel-head-left"><div class="panel-title">Data hub</div></div>
+        <div style="display:flex; gap:6px;">
+          <button class="btn btn-secondary active" id="src-duka-btn" onclick="setDataSource('dukascopy')" style="font-size:11.5px; padding:4px 12px;">Dukascopy</button>
+          <button class="btn btn-ghost" id="src-alltick-btn" onclick="setDataSource('alltick')" style="font-size:11.5px; padding:4px 12px;">AllTick</button>
+          <button class="btn btn-ghost" id="src-synth-btn" onclick="setDataSource('synthetic')" style="font-size:11.5px; padding:4px 12px;">Synthetic</button>
+        </div>
       </div>
-      <div class="btn-row" style="margin-bottom:8px;">
-        <button class="btn btn-primary" id="t-download-btn" onclick="pullTicks('download')">⇩ Download real ticks (Dukascopy)</button>
-        <button class="btn btn-secondary" id="t-generate-btn" onclick="pullTicks('generate')">Generate synthetic</button>
+
+      <!-- DUKASCOPY -->
+      <div id="ds-dukascopy">
+        <div class="toolbar-left" style="margin-bottom:14px; color:var(--muted); font-size:12px;">Free historical tick feed from Dukascopy — one file per market hour. Long ranges take a few minutes; pull in weekly chunks. Cached locally.</div>
+        <div class="row-3" style="margin-bottom:12px;">
+          <div><label style="margin-top:0;">Symbol</label><input type="text" id="t-symbol" value="XAUUSD"></div>
+          <div><label style="margin-top:0;">From</label><input type="date" id="t-from" value="2024-01-01"></div>
+          <div><label style="margin-top:0;">To</label><input type="date" id="t-to" value="2024-01-08"></div>
+        </div>
+        <div class="btn-row" style="margin-bottom:8px;">
+          <button class="btn btn-primary" id="t-download-btn" onclick="pullTicks('download')">⇩ Download real ticks</button>
+        </div>
       </div>
+
+      <!-- ALLTICK -->
+      <div id="ds-alltick" style="display:none;">
+        <div class="toolbar-left" style="margin-bottom:14px; color:var(--muted); font-size:12px;">AllTick provides real-time and historical kline data for forex, metals, crypto, and stocks. <a href="https://alltick.co" target="_blank" style="color:var(--accent);">Get a free API token at alltick.co</a>. Klines are converted to bid/ask ticks for backtesting.</div>
+        <div class="row-2" style="margin-bottom:12px;">
+          <div style="grid-column:1/-1;"><label style="margin-top:0;">AllTick API token</label><input type="text" id="at-token" placeholder="paste your AllTick token here" style="font-family:var(--mono); font-size:11px;"></div>
+        </div>
+        <div class="row-3" style="margin-bottom:12px;">
+          <div><label style="margin-top:0;">Symbol</label><input type="text" id="at-symbol" value="XAUUSD"></div>
+          <div><label style="margin-top:0;">From</label><input type="date" id="at-from" value="2024-01-01"></div>
+          <div><label style="margin-top:0;">To</label><input type="date" id="at-to" value="2024-01-31"></div>
+        </div>
+        <div class="row-2" style="margin-bottom:12px;">
+          <div><label style="margin-top:0;">Kline timeframe</label>
+            <select id="at-kline-type">
+              <option value="1">M1 (1 min) — up to ~2 weeks per pull</option>
+              <option value="5" selected>H1 (1 hour) — up to ~2 years per pull</option>
+              <option value="8">D1 (daily) — long ranges</option>
+            </select>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-bottom:8px;">
+          <button class="btn btn-primary" id="at-download-btn" onclick="pullTicksAllTick()">⇩ Download via AllTick</button>
+        </div>
+      </div>
+
+      <!-- SYNTHETIC -->
+      <div id="ds-synthetic" style="display:none;">
+        <div class="toolbar-left" style="margin-bottom:14px; color:var(--muted); font-size:12px;">Generate synthetic random-walk ticks for pipeline testing. Instant — no network required. Not suitable for real strategy evaluation.</div>
+        <div class="row-3" style="margin-bottom:12px;">
+          <div><label style="margin-top:0;">Symbol</label><input type="text" id="ts-symbol" value="XAUUSD"></div>
+          <div><label style="margin-top:0;">From</label><input type="date" id="ts-from" value="2024-01-01"></div>
+          <div><label style="margin-top:0;">To</label><input type="date" id="ts-to" value="2024-01-08"></div>
+        </div>
+        <div class="btn-row" style="margin-bottom:8px;">
+          <button class="btn btn-secondary" id="t-generate-btn" onclick="pullTicks('generate')">Generate synthetic ticks</button>
+        </div>
+      </div>
+
       <div class="run-note" id="t-status" style="text-align:left; margin-bottom:16px;"></div>
       <table>
         <thead><tr><th>Pair</th><th>Ticks</th><th>From</th><th>To</th></tr></thead>
-        <tbody id="ticks-tbody">
-        </tbody>
+        <tbody id="ticks-tbody"></tbody>
       </table>
     </div>
   </div>
@@ -968,18 +1064,28 @@
     renderTicker();
   }, 2200);
 
-  const pages = ['new','journal','leaderboard','history','ticks','replay'];
+  const pages = ['new','native','journal','leaderboard','history','data','replay'];
   document.querySelectorAll('nav button').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       pages.forEach(p=>document.getElementById('page-'+p).classList.add('hidden'));
       document.getElementById('page-'+btn.dataset.page).classList.remove('hidden');
-      if(btn.dataset.page === 'ticks') loadCoverage();
+      if(btn.dataset.page === 'data') loadCoverage();
       if(btn.dataset.page === 'history') loadHistory();
       if(btn.dataset.page === 'journal') loadJournal();
+      if(btn.dataset.page === 'native') { loadBridgeStatus(); loadEAFiles(); }
     });
   });
+
+  function setDataSource(src){
+    ['dukascopy','alltick','synthetic'].forEach(s=>{
+      document.getElementById('ds-'+s).style.display = s===src ? '' : 'none';
+    });
+    $('src-duka-btn').className   = 'btn ' + (src==='dukascopy' ? 'btn-secondary active' : 'btn-ghost');
+    $('src-alltick-btn').className = 'btn ' + (src==='alltick'  ? 'btn-secondary active' : 'btn-ghost');
+    $('src-synth-btn').className  = 'btn ' + (src==='synthetic'? 'btn-secondary active' : 'btn-ghost');
+  }
 
   document.querySelectorAll('.chip-row .chip').forEach(c=>{
     c.addEventListener('click', ()=>c.classList.toggle('active'));
@@ -1158,6 +1264,96 @@
     }
   }
 
+  let _tvChart = null, _tvSeries = null;
+
+  function renderTVChart(equity, trades, title, containerId) {
+    containerId = containerId || 'tv-chart';
+    const wrap = containerId === 'native-tv-chart' ? $('native-equity-wrap') : $('equity-wrap');
+    const container = $(containerId);
+    if(wrap) wrap.classList.remove('hidden');
+    if($('equity-title') && containerId !== 'native-tv-chart') $('equity-title').textContent = title;
+    if($('equity-range')) $('equity-range').textContent = '';
+
+    // Destroy previous chart instance
+    if (_tvChart) { _tvChart.remove(); _tvChart = null; }
+
+    _tvChart = LightweightCharts.createChart(container, {
+      width: container.clientWidth,
+      height: 280,
+      layout: { background: { color: '#1e222d' }, textColor: '#787b86' },
+      grid: { vertLines: { color: '#2a2e39' }, horzLines: { color: '#2a2e39' } },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: '#363c4e' },
+      timeScale: { borderColor: '#363c4e', timeVisible: true },
+      handleScroll: true,
+      handleScale: true,
+    });
+
+    _tvSeries = _tvChart.addAreaSeries({
+      lineColor: '#2bc98f',
+      topColor: 'rgba(43,201,143,0.25)',
+      bottomColor: 'rgba(43,201,143,0.02)',
+      lineWidth: 2,
+      priceLineVisible: false,
+    });
+
+    // Build time-series data
+    const now_ms = Date.now();
+    const step_ms = 60000; // 1 min spacing if no real timestamps
+    const lineData = equity.map(([idx, val], i) => {
+      // equity entries may be [timestamp_string, val] or [index, val]
+      let t_sec;
+      if (typeof idx === 'string' && idx.includes('T')) {
+        t_sec = Math.floor(new Date(idx).getTime() / 1000);
+      } else {
+        t_sec = Math.floor((now_ms - (equity.length - i) * step_ms) / 1000);
+      }
+      return { time: t_sec, value: Number(val.toFixed(2)) };
+    }).filter(d => isFinite(d.time) && isFinite(d.value))
+      .sort((a, b) => a.time - b.time);
+
+    // Deduplicate timestamps
+    const seen = new Set();
+    const unique = lineData.filter(d => { if(seen.has(d.time)) return false; seen.add(d.time); return true; });
+
+    if (unique.length > 1) {
+      _tvSeries.setData(unique);
+      const vals = unique.map(d => d.value);
+      const mn = Math.min(...vals), mx = Math.max(...vals);
+      $('equity-range').textContent = `$${mn.toLocaleString(undefined,{maximumFractionDigits:0})} – $${mx.toLocaleString(undefined,{maximumFractionDigits:0})}`;
+    }
+
+    // Trade markers
+    if (trades && trades.length) {
+      const markers = [];
+      for (const tr of trades) {
+        const ts = tr.exit_ts || tr.entry_ts;
+        if (!ts) continue;
+        const t_sec = Math.floor(new Date(ts).getTime() / 1000);
+        if (!isFinite(t_sec)) continue;
+        const profit = tr.pnl ?? tr.profit ?? 0;
+        markers.push({
+          time: t_sec,
+          position: profit >= 0 ? 'aboveBar' : 'belowBar',
+          color: profit >= 0 ? '#26a69a' : '#ef5350',
+          shape: profit >= 0 ? 'arrowUp' : 'arrowDown',
+          text: `${profit >= 0 ? '+' : ''}$${Math.abs(profit).toFixed(0)}`,
+          size: 1,
+        });
+      }
+      if (markers.length) {
+        markers.sort((a,b) => a.time - b.time);
+        _tvSeries.setMarkers(markers);
+      }
+    }
+
+    _tvChart.timeScale().fitContent();
+
+    // Responsive resize
+    const ro = new ResizeObserver(() => { if(_tvChart) _tvChart.applyOptions({ width: container.clientWidth }); });
+    ro.observe(container);
+  }
+
   function renderResult(t){
     const r = t.result, p = t.params;
     $('results-label').textContent = `Grid EA · ${p.symbol} · ${p.dt_from} → ${p.dt_to} · ${p.direction} · deposit $${p.deposit.toLocaleString()}`;
@@ -1175,17 +1371,7 @@
     $('results-tbody').prepend(row);
 
     const eq = t.equity || [];
-    if(eq.length > 1){
-      let min = Infinity, max = -Infinity;
-      for(const [,v] of eq){ if(v < min) min = v; if(v > max) max = v; }
-      const span = (max - min) || 1;
-      const pts = eq.map(([,v], i) =>
-        `${(i/(eq.length-1)*600).toFixed(1)},${(114 - (v-min)/span*108).toFixed(1)}`).join(' ');
-      $('equity-line').setAttribute('points', pts);
-      $('equity-title').textContent = `Equity curve — ${p.symbol} (test ${t.id})`;
-      $('equity-range').textContent = `$${min.toFixed(0)} – $${max.toFixed(0)}`;
-      $('equity-wrap').classList.remove('hidden');
-    }
+    if(eq.length > 1) renderTVChart(eq, t.result ? t.result.trades_list || [] : [], `${p.symbol} · test ${t.id}`);
 
     const bar = $('verdict-bar');
     bar.classList.remove('hidden');
@@ -1203,14 +1389,48 @@
     $('verdict-text').innerHTML = text;
   }
 
+  async function pullTicksAllTick(){
+    const token = $('at-token').value.trim();
+    if(!token){ $('t-status').textContent = 'enter your AllTick API token first'; return; }
+    const symbol  = $('at-symbol').value.trim().toUpperCase();
+    const dt_from = $('at-from').value;
+    const dt_to   = $('at-to').value;
+    const kline_type = parseInt($('at-kline-type').value);
+    const status  = $('t-status');
+    const btn     = $('at-download-btn');
+    btn.disabled  = true;
+    status.textContent = `starting AllTick download for ${symbol}…`;
+    try{
+      const res = await authFetch(`${API}/ticks/alltick`, {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({symbol, dt_from, dt_to, token, kline_type})
+      });
+      if(res.status === 401){ showAuth(); throw new Error('signed out'); }
+      let j = await res.json();
+      if(!res.ok) throw new Error(j.detail || res.statusText);
+      while(j.status === 'queued' || j.status === 'running'){
+        await sleep(3000);
+        j = await (await authFetch(`${API}/ticks/download/${j.id}`)).json();
+        status.textContent = `AllTick ${symbol}: ${j.ticks.toLocaleString()} ticks so far…`;
+      }
+      if(j.status === 'failed') throw new Error(j.error || 'download failed');
+      status.textContent = `done — ${j.ticks.toLocaleString()} ticks stored for ${symbol} (AllTick)`;
+      loadCoverage();
+    }catch(e){
+      status.textContent = `error: ${e.message}`;
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
   async function pullTicks(kind){
-    const body = JSON.stringify({
-      symbol: $('t-symbol').value.trim().toUpperCase(),
-      dt_from: $('t-from').value,
-      dt_to: $('t-to').value,
-    });
+    const symbol  = kind === 'generate' ? ($('ts-symbol')?.value || $('t-symbol').value) : $('t-symbol').value;
+    const dt_from = kind === 'generate' ? ($('ts-from')?.value  || $('t-from').value)   : $('t-from').value;
+    const dt_to   = kind === 'generate' ? ($('ts-to')?.value    || $('t-to').value)     : $('t-to').value;
+    const body = JSON.stringify({ symbol: symbol.trim().toUpperCase(), dt_from, dt_to });
     const status = $('t-status');
-    $('t-download-btn').disabled = $('t-generate-btn').disabled = true;
+    $('t-download-btn').disabled = true;
+    if($('t-generate-btn')) $('t-generate-btn').disabled = true;
     status.textContent = kind === 'download'
       ? 'starting Dukascopy download — one file per market hour, this can take a few minutes…'
       : 'generating synthetic ticks…';
@@ -1235,7 +1455,8 @@
     }catch(e){
       status.textContent = `error: ${e.message}`;
     }finally{
-      $('t-download-btn').disabled = $('t-generate-btn').disabled = false;
+      if($('t-download-btn'))  $('t-download-btn').disabled  = false;
+      if($('t-generate-btn')) $('t-generate-btn').disabled = false;
     }
   }
 
@@ -1385,10 +1606,10 @@
     const payload = {
       ea_file_id: ea,
       set_file_id: $('n-set-select').value || null,
-      symbol: $('f-symbol').value.trim().toUpperCase(),
+      symbol: $('n-symbol').value.trim().toUpperCase(),
       timeframe: $('n-tf').value,
-      dt_from: $('f-from').value, dt_to: $('f-to').value,
-      deposit: +$('f-deposit').value,
+      dt_from: $('n-from').value, dt_to: $('n-to').value,
+      deposit: +$('n-deposit').value,
     };
     const btn = $('run-native-btn');
     btn.disabled = true;
@@ -1419,46 +1640,41 @@
     const cls = v => v >= 0 ? 'pos' : 'neg';
     const sign = v => v >= 0 ? '+' : '−';
     const fmt = v => v == null ? '—' : v;
+
     const row = document.createElement('tr');
     if(r.net_profit > 0) row.className = 'best';
-    row.innerHTML = `<td><input type="checkbox" class="row-check" checked></td>
-      <td>${t.id} <span class="badge badge-good" style="margin-left:4px;"><span class="dot"></span>MT5</span></td>
+    row.innerHTML = `
+      <td>${t.id}</td>
+      <td style="font-family:var(--mono); font-size:11px;">${p.ea_name || '—'}</td>
+      <td>${p.symbol}</td>
       <td class="${cls(r.net_profit)}">${sign(r.net_profit)}$${Math.abs(r.net_profit).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       <td class="${cls(r.return_pct)}">${sign(r.return_pct)}${Math.abs(r.return_pct)}%</td>
-      <td>${fmt(r.profit_factor)}</td><td class="neg">${fmt(r.max_drawdown_pct)}%</td>
-      <td>${fmt(r.sharpe)}</td><td>${r.trades}</td><td>${fmt(r.win_pct)}%</td>
-      <td>native</td>`;
-    $('results-tbody').prepend(row);
-    $('results-label').textContent = `${p.ea_name} · ${p.symbol} ${p.timeframe} · ${p.dt_from} → ${p.dt_to} · MT5 Strategy Tester`;
+      <td>${fmt(r.profit_factor)}</td>
+      <td class="neg">${fmt(r.max_drawdown_pct)}%</td>
+      <td>${r.total_trades ?? r.trades ?? '—'}</td>
+      <td>${fmt(r.win_pct)}%</td>`;
+    $('native-results-tbody').prepend(row);
+    $('native-results-label').textContent = `${p.ea_name || 'EA'} · ${p.symbol} ${p.timeframe} · ${p.dt_from} → ${p.dt_to}`;
 
     const eq = r.equity || [];
     if(eq.length > 1){
-      let min = Infinity, max = -Infinity;
-      for(const [,v] of eq){ if(v < min) min = v; if(v > max) max = v; }
-      const span = (max - min) || 1;
-      const pts = eq.map(([,v], i) =>
-        `${(i/(eq.length-1)*600).toFixed(1)},${(114 - (v-min)/span*108).toFixed(1)}`).join(' ');
-      $('equity-line').setAttribute('points', pts);
-      $('equity-title').textContent = `Equity curve — ${p.ea_name} on ${p.symbol} (test ${t.id})`;
-      $('equity-range').textContent = `$${min.toFixed(0)} – $${max.toFixed(0)}`;
-      $('equity-wrap').classList.remove('hidden');
+      $('native-equity-wrap').classList.remove('hidden');
+      renderTVChart(eq, r.trades_list || [], `${p.ea_name || 'MT5'} · ${p.symbol} · ${t.id}`, 'native-tv-chart');
     }
 
     const deals = r.trades_list || [];
-    const tradesPanel = $('native-trades-panel');
     if(deals.length){
       $('native-trades-tbody').innerHTML = deals.map(d => `<tr>
         <td>${d.time}</td><td>${d.symbol}</td><td>${(d.type || '').toUpperCase()}</td>
         <td>${d.volume ?? '—'}</td><td>${d.price ?? '—'}</td>
-        <td class="${d.profit >= 0 ? 'pos' : 'neg'}">${d.profit == null ? '—' : (d.profit >= 0 ? '+' : '−') + '$' + Math.abs(d.profit).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td>$${(+d.balance).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td class="${(d.profit ?? 0) >= 0 ? 'pos' : 'neg'}">${d.profit == null ? '—' : ((d.profit >= 0 ? '+' : '−') + '$' + Math.abs(d.profit).toLocaleString(undefined,{maximumFractionDigits:2}))}</td>
+        <td>$${(+(d.balance ?? 0)).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       </tr>`).join('');
-      tradesPanel.classList.remove('hidden');
+      $('native-trades-panel').classList.remove('hidden');
     } else {
-      tradesPanel.classList.add('hidden');
+      $('native-trades-panel').classList.add('hidden');
     }
-
-    document.getElementById('results').scrollIntoView({behavior:'smooth', block:'nearest'});
+    $('native-results-panel').scrollIntoView({behavior:'smooth', block:'nearest'});
   }
 
   async function loadBridgeStatus(){
