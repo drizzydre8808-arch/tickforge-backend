@@ -686,15 +686,46 @@
 
   <!-- REPLAY STUDIO -->
   <div id="page-strategy" class="hidden">
+    <!-- Strategy selector tabs -->
     <div class="panel">
       <div class="panel-head">
-        <div class="panel-head-left"><div class="panel-title">AI Strategy Generator</div></div>
-        <div class="panel-sub">describe your trading idea</div>
+        <div class="panel-head-left"><div class="panel-title">Strategy Selector</div></div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn btn-secondary active" onclick="setStratMode('prebuilt')" style="font-size:11.5px; padding:4px 12px;">Pre-built</button>
+          <button class="btn btn-ghost" onclick="setStratMode('custom')" style="font-size:11.5px; padding:4px 12px;">Custom AI</button>
+        </div>
       </div>
-      <div style="margin-bottom:16px;">
-        <label style="margin-top:0;">Strategy description (e.g. "buy when RSI drops below 30 and price is above 200-day MA, sell when RSI exceeds 70")</label>
-        <textarea id="strat-desc" style="width:100%; height:120px; font-family:var(--mono); font-size:12px; padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--field); color:inherit;" placeholder="Describe your strategy here..."></textarea>
+
+      <!-- PRE-BUILT STRATEGIES -->
+      <div id="strat-prebuilt" style="display:block;">
+        <div style="margin-bottom:16px;">
+          <label style="margin-top:0;">Choose a strategy</label>
+          <select id="strat-select" style="width:100%; height:40px; font-size:12px;" onchange="loadStrategyTemplate(this.value)">
+            <option value="">— Select a strategy —</option>
+            <option value="ma-crossover">Moving Average Crossover (50/200)</option>
+            <option value="rsi-oversold">RSI Mean Reversion (30/70)</option>
+            <option value="macd-crossover">MACD Crossover</option>
+            <option value="bb-breakout">Bollinger Bands Breakout</option>
+            <option value="golden-cross">Golden Cross / Death Cross</option>
+            <option value="rsi-divergence">RSI Divergence</option>
+            <option value="stoch-oversold">Stochastic Oversold/Overbought</option>
+            <option value="atr-breakout">ATR Breakout</option>
+            <option value="price-action">Price Action (Higher Highs)</option>
+            <option value="ema-ribbon">EMA Ribbon (Trend Following)</option>
+          </select>
+        </div>
+        <div id="strat-template-desc" style="padding:12px; background:var(--field); border-radius:var(--radius); margin-bottom:16px; font-size:12px; color:var(--muted); display:none;"></div>
       </div>
+
+      <!-- CUSTOM AI STRATEGIES -->
+      <div id="strat-custom" style="display:none;">
+        <div style="margin-bottom:16px;">
+          <label style="margin-top:0;">Strategy description (e.g. "buy when RSI drops below 30 and price is above 200-day MA, sell when RSI > 70")</label>
+          <textarea id="strat-desc" style="width:100%; height:100px; font-family:var(--mono); font-size:12px; padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--field); color:inherit;" placeholder="Describe your strategy here..."></textarea>
+        </div>
+      </div>
+
+      <!-- COMMON PARAMETERS -->
       <div class="row-3" style="margin-bottom:12px;">
         <div><label>Symbol</label><input type="text" id="strat-symbol" value="XAUUSD"></div>
         <div><label>From</label><input type="date" id="strat-from" value="2024-01-01"></div>
@@ -705,7 +736,7 @@
         <div><label>Position size</label><input type="number" id="strat-possize" step="0.01" value="0.1"></div>
       </div>
       <div class="btn-row">
-        <button class="btn btn-primary" id="strat-gen-btn" onclick="generateStrategy()">✨ Generate & Backtest</button>
+        <button class="btn btn-primary" id="strat-run-btn" onclick="runSelectedStrategy()">▶ Backtest Strategy</button>
       </div>
       <div class="run-note" id="strat-status" style="text-align:left; margin-bottom:16px;"></div>
     </div>
@@ -1346,17 +1377,49 @@
     }
   }
 
-  async function generateStrategy(){
-    const desc = $('strat-desc').value.trim();
-    if(!desc){ $('strat-status').textContent = 'describe a strategy first'; return; }
-    const btn = $('strat-gen-btn'), status = $('strat-status');
+  let _selectedStrategy = null;
+  let _strategyMode = 'prebuilt';
+
+  function setStratMode(mode) {
+    _strategyMode = mode;
+    document.querySelectorAll('[onclick*="setStratMode"]').forEach(b => b.classList.toggle('active', b.getAttribute('onclick').includes(`'${mode}'`)));
+    $('strat-prebuilt').style.display = mode === 'prebuilt' ? 'block' : 'none';
+    $('strat-custom').style.display = mode === 'custom' ? 'block' : 'none';
+    if(mode === 'prebuilt') $('strat-select').focus();
+  }
+
+  async function loadStrategyTemplate(stratId) {
+    if(!stratId) { _selectedStrategy = null; $('strat-template-desc').style.display = 'none'; return; }
+    const res = await authFetch(`${API}/strategy/templates`);
+    const strategies = await res.json();
+    const strat = strategies.find(s => s.id === stratId);
+    if(strat) {
+      _selectedStrategy = strat;
+      $('strat-template-desc').innerHTML = `<b>${strat.name}</b><br>Entry: ${strat.entry}<br>Exit: ${strat.exit}`;
+      $('strat-template-desc').style.display = 'block';
+    }
+  }
+
+  async function runSelectedStrategy() {
+    const btn = $('strat-run-btn'), status = $('strat-status');
     btn.disabled = true;
-    status.textContent = 'generating strategy with AI…';
-    try{
-      let res = await authFetch(`${API}/strategy/generate`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({description:desc})});
-      if(res.status === 401){ showAuth(); throw new Error('signed out'); }
-      if(!res.ok) throw new Error((await res.json()).detail || 'generation failed');
-      const strat = await res.json();
+    status.textContent = '';
+
+    try {
+      let strat;
+      if(_strategyMode === 'prebuilt') {
+        if(!_selectedStrategy) { status.textContent = 'select a strategy first'; btn.disabled = false; return; }
+        strat = _selectedStrategy;
+      } else {
+        const desc = $('strat-desc').value.trim();
+        if(!desc) { status.textContent = 'describe a strategy first'; btn.disabled = false; return; }
+        status.textContent = 'generating strategy with AI…';
+        let res = await authFetch(`${API}/strategy/generate`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({description:desc})});
+        if(res.status === 401) { showAuth(); throw new Error('signed out'); }
+        if(!res.ok) throw new Error((await res.json()).detail || 'generation failed');
+        strat = await res.json();
+      }
+
       status.textContent = 'backtesting strategy…';
       const payload = {
         symbol: $('strat-symbol').value.trim().toUpperCase(),
@@ -1364,17 +1427,17 @@
         dt_to: $('strat-to').value,
         deposit: +$('strat-deposit').value,
         position_size: +$('strat-possize').value,
-        entry_condition: strat.entry_condition,
-        exit_condition: strat.exit_condition,
+        entry_condition: strat.entry || strat.entry_condition,
+        exit_condition: strat.exit || strat.exit_condition,
       };
-      res = await authFetch(`${API}/strategy/backtest`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      let res = await authFetch(`${API}/strategy/backtest`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
       if(!res.ok) throw new Error((await res.json()).detail || 'backtest failed');
       const result = await res.json();
       renderStrategyResult(result, strat);
       status.textContent = `backtest complete — ${result.total_trades} trades`;
-    }catch(e){
+    } catch(e) {
       status.textContent = `error: ${e.message}`;
-    }finally{
+    } finally {
       btn.disabled = false;
     }
   }
@@ -1383,7 +1446,10 @@
 
   function renderStrategyResult(result, strat){
     $('strat-results-panel').style.display = 'block';
-    $('strat-results-label').textContent = `Strategy: ${strat.entry_condition} → ${strat.exit_condition}`;
+    const entry = strat.entry || strat.entry_condition;
+    const exit = strat.exit || strat.exit_condition;
+    const name = strat.name || 'AI Strategy';
+    $('strat-results-label').textContent = `${name}: ${entry} → ${exit}`;
     const cls = v => v >= 0 ? 'pos' : 'neg';
     $('strat-return').innerHTML = `<span class="${cls(result.net_profit)}">${result.return_pct >= 0 ? '+' : ''}${result.return_pct}%</span>`;
     $('strat-dd').textContent = `${result.max_drawdown_pct}%`;

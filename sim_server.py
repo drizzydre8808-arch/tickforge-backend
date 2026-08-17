@@ -937,6 +937,25 @@ def calc_macd(prices, fast=12, slow=26, signal=9):
     signal_line = sum([macd_line] + (prices[-signal+1:] if len(prices) >= slow+signal else [])) / min(signal, len(prices)-slow+1) if len(prices) >= slow else None
     return macd_line, signal_line, macd_line - (signal_line or macd_line)
 
+# ── Pre-built Strategy Library ────────────────────────────────────────────────
+_STRATEGIES = {
+    "ma-crossover": {"name":"Moving Average Crossover","entry":"price > sma_50 and sma_50 > sma_200","exit":"price < sma_50"},
+    "rsi-oversold": {"name":"RSI Mean Reversion","entry":"rsi < 30","exit":"rsi > 70"},
+    "macd-crossover": {"name":"MACD Crossover","entry":"macd_line > macd_signal","exit":"macd_line < macd_signal"},
+    "bb-breakout": {"name":"Bollinger Bands Breakout","entry":"price > (sma_20 + 2*atr)","exit":"price < sma_20"},
+    "golden-cross": {"name":"Golden Cross / Death Cross","entry":"sma_50 > sma_200","exit":"sma_50 < sma_200"},
+    "rsi-divergence": {"name":"RSI Divergence","entry":"rsi < 40 and price > sma_50","exit":"rsi > 60"},
+    "stoch-oversold": {"name":"Stochastic Oversold","entry":"rsi < 25","exit":"rsi > 75"},
+    "atr-breakout": {"name":"ATR Breakout","entry":"price > (sma_50 + atr)","exit":"price < (sma_50 - atr)"},
+    "price-action": {"name":"Price Action (Higher Highs)","entry":"price > sma_200 and price > sma_50","exit":"price < sma_20"},
+    "ema-ribbon": {"name":"EMA Ribbon Trend","entry":"sma_20 > sma_50 and sma_50 > sma_200","exit":"sma_20 < sma_50"},
+}
+
+@app.get("/strategy/templates")
+async def list_strategies(request: Request):
+    get_user(request)
+    return [{"id":k, "name":v["name"], "entry":v["entry"], "exit":v["exit"]} for k,v in _STRATEGIES.items()]
+
 @app.post("/strategy/generate")
 async def generate_strategy(request: Request):
     get_user(request); body = await request.json()
