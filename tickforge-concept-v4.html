@@ -1177,16 +1177,18 @@
   }, 2200);
 
   const pages = ['new','native','journal','leaderboard','history','data','strategy','replay'];
-  document.querySelectorAll('nav button').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
-      pages.forEach(p=>document.getElementById('page-'+p).classList.add('hidden'));
-      document.getElementById('page-'+btn.dataset.page).classList.remove('hidden');
-      if(btn.dataset.page === 'data') loadCoverage();
-      if(btn.dataset.page === 'history') loadHistory();
-      if(btn.dataset.page === 'journal') loadJournal();
-      if(btn.dataset.page === 'native') { loadBridgeStatus(); loadEAFiles(); }
+  document.addEventListener('DOMContentLoaded', ()=>{
+    document.querySelectorAll('nav button').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        pages.forEach(p=>document.getElementById('page-'+p).classList.add('hidden'));
+        document.getElementById('page-'+btn.dataset.page).classList.remove('hidden');
+        if(btn.dataset.page === 'data') loadCoverage();
+        if(btn.dataset.page === 'history') loadHistory();
+        if(btn.dataset.page === 'journal') loadJournal();
+        if(btn.dataset.page === 'native') { loadBridgeStatus(); loadEAFiles(); }
+      });
     });
   });
 
@@ -1382,10 +1384,13 @@
 
   function setStratMode(mode) {
     _strategyMode = mode;
-    document.querySelectorAll('[onclick*="setStratMode"]').forEach(b => b.classList.toggle('active', b.getAttribute('onclick').includes(`'${mode}'`)));
+    const btns = document.querySelectorAll('[onclick*="setStratMode"]');
+    btns.forEach(b => b.classList.remove('active'));
+    btns.forEach(b => {
+      if(b.getAttribute('onclick').includes(`'${mode}'`)) b.classList.add('active');
+    });
     $('strat-prebuilt').style.display = mode === 'prebuilt' ? 'block' : 'none';
     $('strat-custom').style.display = mode === 'custom' ? 'block' : 'none';
-    if(mode === 'prebuilt') $('strat-select').focus();
   }
 
   async function loadStrategyTemplate(stratId) {
