@@ -374,6 +374,10 @@
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M1 12l3-5 3 3 3-6 3 4 2-3v8H1v-1z"/></svg>
       Data
     </button>
+    <button data-page="strategy">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M8 2a6 6 0 110 12A6 6 0 018 2zm0 1a5 5 0 100 10A5 5 0 008 3zm1.5 3H7v5h2.5V6z"/></svg>
+      AI Strategy
+    </button>
     <button data-page="replay">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="opacity:.7"><path d="M5 3.5l8 4.5-8 4.5V3.5z"/></svg>
       Chart Replay
@@ -681,6 +685,59 @@
   </div>
 
   <!-- REPLAY STUDIO -->
+  <div id="page-strategy" class="hidden">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-head-left"><div class="panel-title">AI Strategy Generator</div></div>
+        <div class="panel-sub">describe your trading idea</div>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="margin-top:0;">Strategy description (e.g. "buy when RSI drops below 30 and price is above 200-day MA, sell when RSI exceeds 70")</label>
+        <textarea id="strat-desc" style="width:100%; height:120px; font-family:var(--mono); font-size:12px; padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--field); color:inherit;" placeholder="Describe your strategy here..."></textarea>
+      </div>
+      <div class="row-3" style="margin-bottom:12px;">
+        <div><label>Symbol</label><input type="text" id="strat-symbol" value="XAUUSD"></div>
+        <div><label>From</label><input type="date" id="strat-from" value="2024-01-01"></div>
+        <div><label>To</label><input type="date" id="strat-to" value="2024-12-31"></div>
+      </div>
+      <div class="row-2" style="margin-bottom:12px;">
+        <div><label>Deposit</label><input type="number" id="strat-deposit" value="10000"></div>
+        <div><label>Position size</label><input type="number" id="strat-possize" step="0.01" value="0.1"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="strat-gen-btn" onclick="generateStrategy()">✨ Generate & Backtest</button>
+      </div>
+      <div class="run-note" id="strat-status" style="text-align:left; margin-bottom:16px;"></div>
+    </div>
+
+    <div class="panel" style="display:none;" id="strat-results-panel">
+      <div class="panel-head">
+        <div class="panel-head-left"><div class="panel-title" id="strat-results-label">Results</div></div>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;">
+        <div class="risk-meter"><div style="font-size:11px; color:var(--muted);">Return</div><div style="font-size:20px; font-weight:700;" id="strat-return">—</div></div>
+        <div class="risk-meter"><div style="font-size:11px; color:var(--muted);">Max Drawdown</div><div style="font-size:20px; font-weight:700;" id="strat-dd">—</div></div>
+        <div class="risk-meter"><div style="font-size:11px; color:var(--muted);">Win %</div><div style="font-size:20px; font-weight:700;" id="strat-winpct">—</div></div>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; font-size:11px;">
+        <div><span class="muted">Trades:</span> <span id="strat-trades" style="font-weight:700;">—</span></div>
+        <div><span class="muted">Profit:</span> <span id="strat-profit" style="font-weight:700;">—</span></div>
+        <div><span class="muted">PF:</span> <span id="strat-pf" style="font-weight:700;">—</span></div>
+        <div><span class="muted">Sharpe:</span> <span id="strat-sharpe" style="font-weight:700;">—</span></div>
+      </div>
+      <div class="chart-wrap" id="strat-equity-wrap" style="margin-bottom:16px;">
+        <div style="padding:8px; color:var(--muted); font-size:11px; font-weight:700;" id="strat-equity-title">Equity curve</div>
+        <div id="strat-tv-chart" style="width:100%;height:260px;"></div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%; font-size:11px;">
+          <thead><tr><th>Entry</th><th>Exit</th><th>Price</th><th>Exit Price</th><th>Lots</th><th>P&L</th></tr></thead>
+          <tbody id="strat-trades-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <div id="page-replay" class="hidden">
 
     <!-- top toolbar -->
@@ -1088,7 +1145,7 @@
     renderTicker();
   }, 2200);
 
-  const pages = ['new','native','journal','leaderboard','history','data','replay'];
+  const pages = ['new','native','journal','leaderboard','history','data','strategy','replay'];
   document.querySelectorAll('nav button').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
@@ -1289,22 +1346,82 @@
     }
   }
 
+  async function generateStrategy(){
+    const desc = $('strat-desc').value.trim();
+    if(!desc){ $('strat-status').textContent = 'describe a strategy first'; return; }
+    const btn = $('strat-gen-btn'), status = $('strat-status');
+    btn.disabled = true;
+    status.textContent = 'generating strategy with AI…';
+    try{
+      let res = await authFetch(`${API}/strategy/generate`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({description:desc})});
+      if(res.status === 401){ showAuth(); throw new Error('signed out'); }
+      if(!res.ok) throw new Error((await res.json()).detail || 'generation failed');
+      const strat = await res.json();
+      status.textContent = 'backtesting strategy…';
+      const payload = {
+        symbol: $('strat-symbol').value.trim().toUpperCase(),
+        dt_from: $('strat-from').value,
+        dt_to: $('strat-to').value,
+        deposit: +$('strat-deposit').value,
+        position_size: +$('strat-possize').value,
+        entry_condition: strat.entry_condition,
+        exit_condition: strat.exit_condition,
+      };
+      res = await authFetch(`${API}/strategy/backtest`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      if(!res.ok) throw new Error((await res.json()).detail || 'backtest failed');
+      const result = await res.json();
+      renderStrategyResult(result, strat);
+      status.textContent = `backtest complete — ${result.total_trades} trades`;
+    }catch(e){
+      status.textContent = `error: ${e.message}`;
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  let _stratTvChart = null, _stratTvSeries = null;
+
+  function renderStrategyResult(result, strat){
+    $('strat-results-panel').style.display = 'block';
+    $('strat-results-label').textContent = `Strategy: ${strat.entry_condition} → ${strat.exit_condition}`;
+    const cls = v => v >= 0 ? 'pos' : 'neg';
+    $('strat-return').innerHTML = `<span class="${cls(result.net_profit)}">${result.return_pct >= 0 ? '+' : ''}${result.return_pct}%</span>`;
+    $('strat-dd').textContent = `${result.max_drawdown_pct}%`;
+    $('strat-winpct').textContent = `${result.win_pct}%`;
+    $('strat-trades').textContent = result.total_trades;
+    $('strat-profit').innerHTML = `<span class="${cls(result.net_profit)}">${result.net_profit >= 0 ? '+' : ''}$${Math.abs(result.net_profit).toLocaleString()}</span>`;
+    $('strat-pf').textContent = result.profit_factor;
+    $('strat-sharpe').textContent = result.sharpe || '—';
+    const tb = $('strat-trades-tbody');
+    tb.innerHTML = '';
+    (result.trades_list || []).forEach(t => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${(t.entry_ts || '').slice(0,16)}</td><td>${(t.exit_ts || '').slice(0,16)}</td><td>${t.entry}</td><td>${t.exit}</td><td>${t.lots}</td><td class="${cls(t.pnl)}">${t.pnl >= 0 ? '+' : ''}$${Math.abs(t.pnl).toLocaleString()}</td>`;
+      tb.appendChild(tr);
+    });
+    if(result.equity_curve && result.equity_curve.length) renderTVChart(result.equity_curve, result.trades_list || [], `AI Strategy`, 'strat-tv-chart');
+  }
+
   let _tvChart = null, _tvSeries = null;
   let _nativeTvChart = null, _nativeTvSeries = null;
+  let _stratTvChart = null, _stratTvSeries = null;
 
   function renderTVChart(equity, trades, title, containerId) {
     containerId = containerId || 'tv-chart';
     const isNative = containerId === 'native-tv-chart';
-    const wrap = isNative ? $('native-equity-wrap') : $('equity-wrap');
+    const isStrat = containerId === 'strat-tv-chart';
+    const wrap = isNative ? $('native-equity-wrap') : (isStrat ? $('strat-equity-wrap') : $('equity-wrap'));
     const container = $(containerId);
     if(!container) return;
     if(wrap) wrap.classList.remove('hidden');
-    if(!isNative && $('equity-title')) $('equity-title').textContent = title;
-    if(!isNative && $('equity-range')) $('equity-range').textContent = '';
+    if(!isNative && !isStrat && $('equity-title')) $('equity-title').textContent = title;
+    if(!isNative && !isStrat && $('equity-range')) $('equity-range').textContent = '';
 
     // Destroy previous chart instance for this slot only
     if(isNative) {
       if(_nativeTvChart){ _nativeTvChart.remove(); _nativeTvChart = null; }
+    } else if(isStrat) {
+      if(_stratTvChart){ _stratTvChart.remove(); _stratTvChart = null; }
     } else {
       if(_tvChart){ _tvChart.remove(); _tvChart = null; }
     }
@@ -1331,6 +1448,7 @@
 
     // Store chart refs in the right slot
     if(isNative){ _nativeTvChart = chart; _nativeTvSeries = series; }
+    else if(isStrat){ _stratTvChart = chart; _stratTvSeries = series; }
     else         { _tvChart = chart;       _tvSeries = series; }
 
     // Build time-series — equity entries are [timestamp_string|index, value]

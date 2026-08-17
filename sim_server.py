@@ -915,6 +915,147 @@ async def bars(request: Request):
         result.append([ts_str, round(o,5), round(h,5), round(l,5), round(c,5)])
     return result
 
+# ── AI Strategy Engine ─────────────────────────────────────────────────────────
+def calc_sma(prices, period):
+    if len(prices) < period: return None
+    return sum(prices[-period:]) / period
+
+def calc_rsi(prices, period=14):
+    if len(prices) < period+1: return None
+    deltas = [prices[i]-prices[i-1] for i in range(1, len(prices))]
+    gains = [d if d>0 else 0 for d in deltas[-period:]]
+    losses = [-d if d<0 else 0 for d in deltas[-period:]]
+    avg_gain = sum(gains) / period; avg_loss = sum(losses) / period
+    if avg_loss == 0: return 100 if avg_gain > 0 else 50
+    rs = avg_gain / avg_loss; return round(100 - (100 / (1 + rs)), 2)
+
+def calc_macd(prices, fast=12, slow=26, signal=9):
+    if len(prices) < slow: return None, None, None
+    ema_fast = sum(prices[-fast:]) / fast
+    ema_slow = sum(prices[-slow:]) / slow
+    macd_line = ema_fast - ema_slow
+    signal_line = sum([macd_line] + (prices[-signal+1:] if len(prices) >= slow+signal else [])) / min(signal, len(prices)-slow+1) if len(prices) >= slow else None
+    return macd_line, signal_line, macd_line - (signal_line or macd_line)
+
+@app.post("/strategy/generate")
+async def generate_strategy(request: Request):
+    get_user(request); body = await request.json()
+    desc = body.get("description", "").strip()
+    if not desc: raise HTTPException(400, "strategy description required")
+    if not ANTHROPIC_KEY: raise HTTPException(400, "ANTHROPIC_API_KEY not set")
+    import urllib.request as _ur; import urllib.parse as _up
+    prompt = f"""You are a trading strategy code generator. The user wants a strategy.
+
+User description: {desc}
+
+Generate ONLY valid Python boolean expressions for entry and exit signals. Use ONLY these variables:
+- price: current close price
+- sma_20, sma_50, sma_200: simple moving averages
+- rsi: RSI(14)
+- macd_line, macd_signal: MACD line and signal line
+- atr: average true range
+- volume: current volume (if available)
+
+Return JSON with exactly this format:
+{{"entry_condition": "price > sma_50 and rsi < 30", "exit_condition": "rsi > 70 or price < sma_20", "position_size": 0.1}}
+
+Entry/exit must be valid Python boolean expressions using only the variables above."""
+
+    try:
+        payload = json.dumps({"model":"claude-haiku-4-5-20251001","max_tokens":200,"messages":[{"role":"user","content":prompt}]}).encode()
+        req = _ur.Request("https://api.anthropic.com/v1/messages", data=payload,
+            headers={"x-api-key":ANTHROPIC_KEY,"content-type":"application/json","anthropic-version":"2023-06-01"})
+        with _ur.urlopen(req, timeout=30) as r:
+            resp = json.loads(r.read())
+        text = resp["content"][0]["text"] if resp.get("content") else ""
+        start = text.find("{"); end = text.rfind("}")+1
+        if start < 0 or end <= start: raise Exception("no JSON in response")
+        strat = json.loads(text[start:end])
+        return {"entry_condition": strat.get("entry_condition",""), "exit_condition": strat.get("exit_condition",""), "position_size": strat.get("position_size", 0.1)}
+    except Exception as e:
+        raise HTTPException(500, f"strategy generation failed: {str(e)}")
+
+@app.post("/strategy/backtest")
+async def backtest_strategy(request: Request):
+    uid = get_user(request); body = await request.json()
+    symbol = body.get("symbol", "XAUUSD").upper()
+    dt_from = body.get("dt_from", "2024-01-01")
+    dt_to = body.get("dt_to", "2024-12-31")
+    deposit = body.get("deposit", 10000)
+    entry_expr = body.get("entry_condition", "")
+    exit_expr = body.get("exit_condition", "")
+    position_size = body.get("position_size", 0.1)
+    commission = body.get("commission_per_lot", 7.0)
+    slippage = body.get("slippage_price", 0.0)
+
+    if not entry_expr or not exit_expr: raise HTTPException(400, "entry and exit conditions required")
+    f = TICKS_DIR / f"{symbol}.csv"
+    if not f.exists(): raise HTTPException(404, "no tick data for symbol")
+
+    import datetime as _DT; unit = LOT_UNITS.get(symbol, 100000)
+    ts_from = _DT.datetime.fromisoformat(dt_from).replace(tzinfo=None)
+    ts_to = _DT.datetime.fromisoformat(dt_to).replace(tzinfo=None)
+
+    ticks = []
+    with open(str(f), newline="", encoding="utf-8") as fh:
+        r = csv.reader(fh); next(r, None)
+        for row in r:
+            if len(row) < 4: continue
+            try:
+                ts = _DT.datetime.fromisoformat(row[1])
+                if ts_from <= ts <= ts_to:
+                    ticks.append((ts, float(row[2]), float(row[3])))
+            except: pass
+
+    if not ticks: raise HTTPException(404, "no ticks in date range")
+    ticks.sort()
+
+    prices = []; trades = []; equity = deposit; peak = deposit; max_dd = 0.0
+    open_trade = None; eq_samples = []
+
+    for i, (ts, bid, ask) in enumerate(ticks):
+        price = (bid + ask) / 2; prices.append(price)
+        sma_20 = calc_sma(prices, 20); sma_50 = calc_sma(prices, 50); sma_200 = calc_sma(prices, 200)
+        rsi = calc_rsi(prices); macd_line, macd_signal, _ = calc_macd(prices)
+        volume = 1; atr = (ask - bid) * 2
+
+        try:
+            entry_signal = eval(entry_expr, {"__builtins__":{}, "price":price, "sma_20":sma_20 or 0, "sma_50":sma_50 or 0, "sma_200":sma_200 or 0, "rsi":rsi or 50, "macd_line":macd_line or 0, "macd_signal":macd_signal or 0, "atr":atr, "volume":volume})
+            exit_signal = eval(exit_expr, {"__builtins__":{}, "price":price, "sma_20":sma_20 or 0, "sma_50":sma_50 or 0, "sma_200":sma_200 or 0, "rsi":rsi or 50, "macd_line":macd_line or 0, "macd_signal":macd_signal or 0, "atr":atr, "volume":volume})
+        except:
+            continue
+
+        if not open_trade and entry_signal:
+            open_trade = {"entry": price, "ts": ts, "lot": position_size}
+        elif open_trade and exit_signal:
+            pnl = (price - open_trade["entry"]) * open_trade["lot"] * unit - commission * open_trade["lot"]
+            equity += pnl
+            trades.append({"side":"long","lots":open_trade["lot"],"entry":round(open_trade["entry"],5),"exit":round(price,5),"pnl":round(pnl,2),"entry_ts":str(open_trade["ts"]),"exit_ts":str(ts)})
+            open_trade = None
+
+        if i % 100 == 0:
+            mtm = equity + (open_trade["lot"] * unit * (price - open_trade["entry"]) if open_trade else 0)
+            eq_samples.append([str(ts), mtm]); peak = max(peak, mtm); max_dd = max(max_dd, (peak - mtm) / peak * 100 if peak > 0 else 0)
+
+    wins = [t for t in trades if t["pnl"] > 0]; losses = [t for t in trades if t["pnl"] <= 0]
+    gp = sum(t["pnl"] for t in wins); gl = -sum(t["pnl"] for t in losses)
+    pf = round(gp / gl, 2) if gl > 0 else (999.99 if gp > 0 else 0.0)
+    net = round(equity - deposit, 2)
+    sharpe = None
+    if len(eq_samples) > 2:
+        d = [eq_samples[i+1][1] - eq_samples[i][1] for i in range(len(eq_samples)-1)]
+        mn = sum(d) / len(d); std = math.sqrt(sum((x-mn)**2 for x in d) / len(d)) if len(d) > 0 else 1
+        if std > 0: sharpe = round(mn / std * math.sqrt(len(d)), 2)
+    return {
+        "starting_balance": deposit, "ending_balance": round(equity, 2),
+        "net_profit": net, "return_pct": round(net/deposit*100, 2),
+        "total_trades": len(trades), "wins": len(wins), "losses": len(losses),
+        "win_pct": round(len(wins)/len(trades)*100, 1) if trades else 0,
+        "profit_factor": pf, "max_drawdown_pct": round(max_dd, 2),
+        "sharpe": sharpe, "ticks_processed": len(ticks),
+        "equity_curve": eq_samples, "trades_list": trades
+    }
+
 # ── Native / Bridge ───────────────────────────────────────────────────────────
 @app.post("/native/files")
 async def upload_file(request: Request):
