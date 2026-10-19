@@ -9,7 +9,11 @@ export interface Settings {
 }
 
 const KEY = 'dealer360.settings';
-const DEFAULTS: Settings = { baseUrl: 'http://192.168.1.10:8000', apiKey: '' };
+// Baked in at build time (see eas.json env) so the installed APK works without setup.
+const DEFAULTS: Settings = {
+  baseUrl: process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.10:8000',
+  apiKey: process.env.EXPO_PUBLIC_API_KEY || '',
+};
 
 async function load(): Promise<Settings> {
   try {

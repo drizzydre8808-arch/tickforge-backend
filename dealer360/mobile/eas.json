@@ -1,7 +1,22 @@
 {
-  "cli": { "version": ">= 13.0.0" },
+  "cli": {
+    "version": ">= 13.0.0"
+  },
   "build": {
-    "preview": { "distribution": "internal", "android": { "buildType": "apk" } },
-    "production": { "android": { "buildType": "app-bundle" } }
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://YOUR-SERVER",
+        "EXPO_PUBLIC_API_KEY": "same-as-DEALER360_API_KEY"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
   }
 }

@@ -19,3 +19,10 @@ In the app: Settings -> server address (`http://SERVER_IP:8000` or your HTTPS UR
 
 ## Known limits
 Detector `classical` is a placeholder; train YOLO weights or use `vlm` for real detection. GoPro endpoints unverified. Single shared API key.
+
+## Zero-setup install (recommended)
+The APK can ship pre-configured so users just install and open it:
+1. Deploy the backend once (Render: New -> Blueprint -> this repo's `dealer360/render.yaml`, or Docker above). Note its URL and API key.
+2. Put them in `mobile/eas.json` -> `build.preview.env` (`EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_API_KEY`). The key is readable inside the APK, so only distribute it to your own staff.
+3. Add an `EXPO_TOKEN` repo secret, then run the "Dealer360 APK" GitHub Action; download the APK from the EAS build link.
+Settings in the app still override the baked-in values.
