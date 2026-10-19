@@ -23,7 +23,7 @@ export default function Uploads() {
 
   return (
     <Screen>
-      <Muted>Captures saved while the server was unreachable (e.g. phone on a GoPro’s Wi-Fi). Rejoin your normal network, then retry.</Muted>
+      <Muted>Captures waiting for internet to be analysed (e.g. phone on a GoPro’s Wi-Fi). Rejoin your normal network, then retry.</Muted>
       <Button title="Retry all" onPress={retry} busy={busy} disabled={q.length === 0} />
       {msg ? <Muted>{msg}</Muted> : null}
       {q.map((j) => (

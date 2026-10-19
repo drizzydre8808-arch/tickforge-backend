@@ -7,17 +7,17 @@ import { useSettings } from '@/lib/settings';
 
 export default function SettingsScreen() {
   const { settings, save } = useSettings();
-  const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
-  const [apiKey, setApiKey] = useState(settings.apiKey);
+  const [anthropicKey, setAnthropicKey] = useState(settings.anthropicKey);
+  const [dvlaKey, setDvlaKey] = useState(settings.dvlaKey);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function test() {
     setBusy(true);
-    configureApi({ baseUrl: baseUrl.trim().replace(/\/+$/, ''), apiKey: apiKey.trim() });
+    configureApi({ anthropicKey: anthropicKey.trim(), dvlaKey: dvlaKey.trim() });
     try {
       const h = await api.health();
-      setMsg(`Connected. Detector: ${h.detector}`);
+      setMsg(`AI detection connected (${h.detector}).`);
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -25,19 +25,19 @@ export default function SettingsScreen() {
     }
   }
   async function doSave() {
-    await save({ baseUrl: baseUrl.trim().replace(/\/+$/, ''), apiKey: apiKey.trim() });
+    await save({ anthropicKey: anthropicKey.trim(), dvlaKey: dvlaKey.trim() });
     router.back();
   }
 
   return (
     <Screen>
       <Card>
-        <Field label="Server address" value={baseUrl} onChangeText={setBaseUrl} placeholder="http://192.168.1.10:8000" keyboardType="url" />
-        <Field label="API key (if set on the server)" value={apiKey} onChangeText={setApiKey} secureTextEntry />
-        <Muted>Phone and server must be on the same network. Use HTTPS in production.</Muted>
+        <Field label="Anthropic API key (damage detection)" value={anthropicKey} onChangeText={setAnthropicKey} secureTextEntry />
+        <Field label="DVLA API key (plate lookup, optional)" value={dvlaKey} onChangeText={setDvlaKey} secureTextEntry />
+        <Muted>Everything else runs on this device. Detection needs internet: each photo is sent to Anthropic for analysis. Keys are stored in the device&apos;s secure storage.</Muted>
       </Card>
       {msg ? <Muted>{msg}</Muted> : null}
-      <Button title="Test connection" kind="ghost" onPress={test} busy={busy} />
+      <Button title="Test AI connection" kind="ghost" onPress={test} busy={busy} />
       <Button title="Save" onPress={doSave} />
     </Screen>
   );

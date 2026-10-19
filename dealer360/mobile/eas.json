@@ -9,8 +9,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://YOUR-SERVER",
-        "EXPO_PUBLIC_API_KEY": "same-as-DEALER360_API_KEY"
+        "EXPO_PUBLIC_ANTHROPIC_API_KEY": "",
+        "EXPO_PUBLIC_DVLA_API_KEY": ""
       }
     },
     "production": {

@@ -21,9 +21,9 @@ export default function GoPro() {
       const uri = await fn();
       const out = await submit(makeJob({ vehicleId: Number(id), kind, uri, view, sourceCamera: 'GoPro' }));
       setMsg(
-        out.status === 'sent' ? `Uploaded: ${out.result.defects.length} defect(s)`
-        : out.status === 'queued' ? 'Saved on the phone. Rejoin your normal Wi-Fi and open Upload queue to send it.'
-        : `Server rejected it: ${out.error}`,
+        out.status === 'sent' ? `Analysed: ${out.result.defects.length} defect(s)`
+        : out.status === 'queued' ? 'Saved on the device. Rejoin a network with internet and open the queue to analyse it.'
+        : `Could not analyse it: ${out.error}`,
       );
     } catch (e: any) {
       setMsg(e.message);
@@ -36,7 +36,7 @@ export default function GoPro() {
     <Screen>
       <Card>
         <Muted>
-          HERO9 or newer. Turn on the camera’s Wi-Fi, join it from your phone’s Wi-Fi settings, then test. While joined, the phone usually can’t reach your server, so uploads go to the queue.
+          HERO9 or newer. Turn on the camera’s Wi-Fi, join it from your phone’s Wi-Fi settings, then test. While joined, the phone has no internet, so analysis waits in the queue until you rejoin your normal network.
         </Muted>
         <Muted>Control endpoints are unverified against current GoPro docs. If a call fails, correct them in src/lib/gopro.ts.</Muted>
       </Card>

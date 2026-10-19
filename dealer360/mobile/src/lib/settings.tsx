@@ -4,21 +4,22 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { configureApi } from './api';
 
 export interface Settings {
-  baseUrl: string;
-  apiKey: string;
+  anthropicKey: string;
+  dvlaKey: string;
 }
 
 const KEY = 'dealer360.settings';
-// Baked in at build time (see eas.json env) so the installed APK works without setup.
+// Optionally baked in at build time (see eas.json env); the Settings screen overrides them.
 const DEFAULTS: Settings = {
-  baseUrl: process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.10:8000',
-  apiKey: process.env.EXPO_PUBLIC_API_KEY || '',
+  anthropicKey: process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '',
+  dvlaKey: process.env.EXPO_PUBLIC_DVLA_API_KEY || '',
 };
 
 async function load(): Promise<Settings> {
   try {
     const raw = await SecureStore.getItemAsync(KEY);
-    return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
+    const saved = raw ? JSON.parse(raw) : {};
+    return { anthropicKey: saved.anthropicKey || DEFAULTS.anthropicKey, dvlaKey: saved.dvlaKey || DEFAULTS.dvlaKey };
   } catch {
     return DEFAULTS;
   }
@@ -45,7 +46,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const save = async (s: Settings) => {
-    const clean = { baseUrl: s.baseUrl.trim().replace(/\/+$/, ''), apiKey: s.apiKey.trim() };
+    const clean = { anthropicKey: s.anthropicKey.trim(), dvlaKey: s.dvlaKey.trim() };
     await SecureStore.setItemAsync(KEY, JSON.stringify(clean));
     configureApi(clean);
     setSettings(clean);

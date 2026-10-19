@@ -38,8 +38,8 @@ export default function Capture() {
       if (!pic) throw new Error('No picture taken');
       const out = await submit(makeJob({ vehicleId: Number(id), kind: 'photo', uri: pic.uri, view: step.view, sourceCamera: 'phone' }));
       if (out.status === 'sent') setStatus(`${step.title}: ${out.result.defects.length} defect(s) found`);
-      else if (out.status === 'queued') setStatus(`${step.title}: saved, will upload later (${out.error})`);
-      else setStatus(`${step.title}: server rejected it (${out.error})`);
+      else if (out.status === 'queued') setStatus(`${step.title}: saved, will analyse later (${out.error})`);
+      else setStatus(`${step.title}: rejected (${out.error})`);
       if (i + 1 < WALKAROUND.length) setI(i + 1);
       else router.back();
     } catch (e: any) {

@@ -12,7 +12,6 @@ import { ALL_VIEWS, WALKAROUND, type Lens, type MediaKind, type View } from '@/l
 const SOURCES = ['Insta360', 'GoPro', 'DJI', 'USB 360', 'Other'];
 const KINDS: { k: MediaKind; t: string }[] = [
   { k: 'photo', t: 'Flat photo' },
-  { k: 'equirect', t: '360 photo (stitched)' },
   { k: 'video', t: 'Video clip' },
 ];
 // Default evenly spaced yaw per walkaround view for a 360 taken from the car's centre
@@ -86,7 +85,7 @@ export default function Import() {
       )}
       <Field label="Lens FOV degrees (fisheye only, optional)" value={fov} onChangeText={setFov} keyboardType="decimal-pad" />
       <Field label="mm per pixel (optional, if known)" value={mm} onChangeText={setMm} keyboardType="decimal-pad" />
-      <Button title="Choose file & upload" onPress={go} busy={busy} />
+      <Button title="Choose file & analyse" onPress={go} busy={busy} />
       {log.map((l, i) => <Text key={i} style={{ color: palette.ink }}>{l}</Text>)}
     </Screen>
   );

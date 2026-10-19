@@ -102,3 +102,14 @@ export interface UploadJob {
   attempts: number;
   lastError?: string;
 }
+
+export interface PlateRead {
+  best: string | null;
+  candidates: { vrm: string; valid: boolean; votes: number }[];
+  error?: string;
+}
+export interface PlateInfo {
+  reg: string; make?: string | null; year?: number | null; colour?: string | null;
+  fuel?: string | null; mot_status?: string | null; mot_expiry?: string | null;
+  tax_status?: string | null; tax_due?: string | null;
+}

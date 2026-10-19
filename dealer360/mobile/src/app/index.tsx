@@ -29,7 +29,7 @@ export default function Home() {
         <Button title="Settings" kind="ghost" onPress={() => router.push('/settings')} />
         {queued > 0 && <Button title={`Queue (${queued})`} kind="ghost" onPress={() => router.push('/uploads')} />}
       </Row>
-      {err ? <Card><Text style={{ color: '#d92d20' }}>{err}</Text><Muted>Check the server address in Settings.</Muted></Card> : null}
+      {err ? <Card><Text style={{ color: '#d92d20' }}>{err}</Text><Muted>Something went wrong reading local data.</Muted></Card> : null}
       {list.length === 0 && !err ? <Muted>No vehicles yet.</Muted> : null}
       {list.map((v) => (
         <Card key={v.id} onPress={() => router.push(`/vehicle/${v.id}`)}>

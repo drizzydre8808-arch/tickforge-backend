@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Image, Text } from 'react-native';
+import { Image, Text, View } from 'react-native';
 
 import { Button, Card, Chip, Field, H, Muted, Row, Screen } from '@/components/ui';
 import { absUrl, api, withKey } from '@/lib/api';
@@ -37,7 +37,12 @@ export default function DefectScreen() {
     <Screen>
       <H>{niceLabel[d.label] ?? d.label} — {d.panel}</H>
       {d.crop_url ? <Image source={{ uri: withKey(absUrl(d.crop_url)) }} style={{ width: '100%', aspectRatio: 1, borderRadius: 12 }} resizeMode="contain" /> : null}
-      {d.overview_url ? <Image source={{ uri: withKey(absUrl(d.overview_url)) }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 12 }} resizeMode="contain" /> : null}
+      {d.overview_url ? (
+        <View style={{ width: '100%' }}>
+          <Image source={{ uri: withKey(absUrl(d.overview_url)) }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 12 }} resizeMode="stretch" />
+          <View pointerEvents="none" style={{ position: 'absolute', borderWidth: 2, borderColor: '#ef4444', left: `${d.box[0] * 100}%`, top: `${d.box[1] * 100}%`, width: `${(d.box[2] - d.box[0]) * 100}%`, height: `${(d.box[3] - d.box[1]) * 100}%` }} />
+        </View>
+      ) : null}
       <Card>
         <Muted>{d.description}</Muted>
         <Muted>Side: {d.side} · Band: {d.band}</Muted>
